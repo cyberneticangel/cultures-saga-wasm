@@ -9,7 +9,7 @@ Flags are computed lazily: a backward liveness pass decides which flags are need
 and condition codes are emitted directly from the operands of the instruction that
 produced them whenever possible (cmp/jcc -> `if (a < b)`).
 """
-import os, sys, struct
+import os, sys, struct, zlib
 from capstone import CS_OP_IMM, CS_OP_MEM, CS_OP_REG
 from capstone import x86_const as X
 from pe import Image
@@ -140,6 +140,7 @@ class FuncEmitter:
             return '0x%xu' % (op.imm & ((1 << (8 * size)) - 1))
         if op.type == CS_OP_MEM:
             if size == 4: return 'M32(%s)' % self.addr(ins, op)
+            if size not in MEMF: raise Unsupported('mem operand size %d' % size)   # e.g. far pointers in data decoded as code
             return '(uint32_t)%s(%s)' % (MEMF[size], self.addr(ins, op))
         raise Unsupported('op')
 
@@ -1037,7 +1038,11 @@ class Translator:
               'const struct import_entry recomp_imports[] = {']
         for slot, (dll, name) in sorted(all_imports.items()):
             t.append('  {0x%08xu, "%s", "%s", %s},' % (slot, dll, name, imp_name(dll, name)))
-        t += ['};']
+        t += ['};', '']
+        # which files this code was generated from: the runtime loads (and checks) exactly these
+        t.append('const uint32_t recomp_module_count = %d;' % len(self.module_files))
+        t.append('const char *const recomp_module_names[] = {%s};' % ', '.join('"%s"' % n for n, _ in self.module_files))
+        t.append('const uint32_t recomp_module_crcs[] = {%s};' % ', '.join('0x%08xu' % c for _, c in self.module_files))
         # weak default stubs for unimplemented imports
         for dll, name in imps:
             t.append('__attribute__((weak)) void %s(void) { hle_missing("%s", "%s"); }' % (imp_name(dll, name), dll, name))
@@ -1066,15 +1071,20 @@ def load_extra(path):
 if __name__ == '__main__':
     # usage: translate.py OUTDIR MODULE.exe [MODULE.dll ...]
     outdir, paths = sys.argv[1], sys.argv[2:]
-    extra = load_extra(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'extra_entries.txt'))
-    mods = []
+    extra_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'extra')
+    mods, files = [], []
     for p in paths:
+        # extra function entries the analysis misses, per module: recomp/extra/<file name>.txt
+        extra = load_extra(os.path.join(extra_dir, os.path.basename(p).lower() + '.txt'))
+        files.append((os.path.basename(p), zlib.crc32(open(p, 'rb').read())))
         img = Image(p)
         lo, hi = img.base, img.base + img.size
         an = Analyzer(img, [e for e in extra if lo <= e < hi]).run()
         print('%s: %d functions' % (os.path.basename(p), len(an.funcs)))
         mods.append(Module(img, an))
     tr = Translator(mods)
+    tr.module_files = files
+    os.makedirs(outdir, exist_ok=True)
     tr.run(outdir)
     for k, v in sorted(tr.unsupported.items(), key=lambda kv: -kv[1]):
         print('  unsupported', k, v)

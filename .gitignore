@@ -4,5 +4,6 @@ extracted/
 __pycache__/
 userdata-native/
 .venv/
-# compiled from the game executable: build it from your own copy (see README)
-web/cultures.wasm
+# compiled from the game executables: build them from your own copy (see README)
+web/cultures*.wasm
+web/cultures-*.json

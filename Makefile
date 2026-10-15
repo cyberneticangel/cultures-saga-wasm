@@ -1,61 +1,86 @@
-# Cultures - Die Saga: static recompilation build.
+# Cultures: static recompilation build.  One build per game executable ("variant").
 #
-#   make gen      regenerate C from the game executable (needs python + capstone + pefile)
-#   make native   SDL2 build for debugging     -> build/native/cultures
-#   make web      WebAssembly build            -> web/cultures.wasm
+#   make gen    [EXE=...]   regenerate C from the game executable (needs python + capstone + pefile)
+#   make web    [EXE=...]   WebAssembly build      -> web/cultures-<variant>.wasm (+ .json)
+#   make native [EXE=...]   SDL2 build for debugging -> build/native/<variant>/cultures
+#   make all-versions       gen + web for every supported executable found in GAME_DIR
 #
+# EXE defaults to GameSaga.exe; the variant name is the executable's name in lower case without
+# .exe (gamesaga, game8thwonder, gamenorthland).
 GAME_DIR ?= ..
 EXE      ?= $(GAME_DIR)/GameSaga.exe
 PYTHON   ?= python3
 OPT      ?= -O2
+VERSIONS ?= GameSaga.exe Game8thwonder.exe GameNorthland.exe
 
-GEN_SRC  := $(wildcard build/gen/code_*.c) build/gen/table.c
+VARIANT  := $(shell basename "$(EXE)" | tr 'A-Z' 'a-z' | sed 's/\.exe$$//')
+GEN      := build/gen/$(VARIANT)
+GEN_SRC  := $(wildcard $(GEN)/code_*.c) $(GEN)/table.c
 RT_SRC   := cpu.c mem.c loader.c vfs.c kernel32.c user32.c misc.c ddraw.c dsound.c dinput.c main.c dmusic.c dmsynth.c cursor.c dplay.c video.c
-CFLAGS_COMMON := -std=gnu11 -Iruntime -Ibuild/gen -fno-strict-aliasing -fwrapv \
+RT_HDR   := runtime/recomp.h runtime/runtime.h runtime/dmusic_int.h $(GEN)/funcs.h
+CFLAGS_COMMON := -std=gnu11 -Iruntime -I$(GEN) -fno-strict-aliasing -fwrapv \
                  -Wno-parentheses-equality -Wno-unused-variable -Wno-unused-label -Wno-unused-but-set-variable
 
-.PHONY: all gen native web clean
+.PHONY: all gen native web all-versions clean
 all: native
 
+# the music driver next to the executable (each game version ships its own), else GAME_DIR's
+MUSIC_DLL = $(firstword $(wildcard $(dir $(EXE))gedx8musicdrv.dll) $(GAME_DIR)/gedx8musicdrv.dll)
+
 gen:
-	$(PYTHON) recomp/translate.py build/gen $(EXE) $(GAME_DIR)/gedx8musicdrv.dll
+	$(PYTHON) recomp/translate.py $(GEN) $(EXE) $(MUSIC_DLL)
+
+all-versions:
+	@for exe in $(VERSIONS); do \
+	  if [ -f "$(GAME_DIR)/$$exe" ]; then \
+	    echo "== $$exe"; \
+	    $(MAKE) --no-print-directory gen EXE="$(GAME_DIR)/$$exe" && \
+	    $(MAKE) --no-print-directory web EXE="$(GAME_DIR)/$$exe" || exit 1; \
+	  else echo "== $$exe: not in $(GAME_DIR), skipped"; fi; \
+	done
 
 # ---------------------------------------------------------------- native
-NATIVE_OBJ := $(patsubst build/gen/%.c,build/native/gen/%.o,$(GEN_SRC)) \
-              $(patsubst %.c,build/native/rt/%.o,$(RT_SRC) platform_sdl.c)
-native: build/native/cultures
+NATIVE   := build/native/$(VARIANT)
+NATIVE_OBJ := $(patsubst $(GEN)/%.c,$(NATIVE)/gen/%.o,$(GEN_SRC)) \
+              $(patsubst %.c,$(NATIVE)/rt/%.o,$(RT_SRC) platform_sdl.c)
+native: $(NATIVE)/cultures
 
-build/native/gen/%.o: build/gen/%.c runtime/recomp.h build/gen/funcs.h
+$(NATIVE)/gen/%.o: $(GEN)/%.c runtime/recomp.h $(GEN)/funcs.h
 	@mkdir -p $(dir $@)
 	clang $(CFLAGS_COMMON) $(OPT) -g -c $< -o $@
 
-build/native/rt/%.o: runtime/%.c runtime/recomp.h runtime/runtime.h runtime/dmusic_int.h build/gen/funcs.h
+$(NATIVE)/rt/%.o: runtime/%.c $(RT_HDR)
 	@mkdir -p $(dir $@)
 	clang $(CFLAGS_COMMON) -O1 -g -Wall -Wno-unused-function -c $< -o $@
 
-build/native/cultures: $(NATIVE_OBJ)
+$(NATIVE)/cultures: $(NATIVE_OBJ)
 	clang -o $@ $^ -lSDL2 -lm
 
 # ---------------------------------------------------------------- web
 # Guest memory occupies [0, 0x38000000); the runtime's own data is placed above it.
+WEBB       := build/web/$(VARIANT)
 WASM_CC    := zig cc -target wasm32-wasi
 WASM_FLAGS := $(CFLAGS_COMMON) -mbulk-memory -mnontrapping-fptoint
-WEB_OBJ := $(patsubst build/gen/%.c,build/web/gen/%.o,$(GEN_SRC)) \
-           $(patsubst %.c,build/web/rt/%.o,$(RT_SRC) platform_web.c)
-web: web/cultures.wasm
+WEB_OBJ := $(patsubst $(GEN)/%.c,$(WEBB)/gen/%.o,$(GEN_SRC)) \
+           $(patsubst %.c,$(WEBB)/rt/%.o,$(RT_SRC) platform_web.c)
+web: web/cultures-$(VARIANT).wasm web/cultures-$(VARIANT).json
 
-build/web/gen/%.o: build/gen/%.c runtime/recomp.h build/gen/funcs.h
+$(WEBB)/gen/%.o: $(GEN)/%.c runtime/recomp.h $(GEN)/funcs.h
 	@mkdir -p $(dir $@)
 	$(WASM_CC) $(WASM_FLAGS) $(OPT) -c $< -o $@
 
-build/web/rt/%.o: runtime/%.c runtime/recomp.h runtime/runtime.h build/gen/funcs.h
+$(WEBB)/rt/%.o: runtime/%.c $(RT_HDR)
 	@mkdir -p $(dir $@)
 	$(WASM_CC) $(WASM_FLAGS) -O2 -c $< -o $@
 
-web/cultures.wasm: build/web/cultures.raw.wasm
+web/cultures-$(VARIANT).wasm: $(WEBB)/cultures.raw.wasm
 	wasm-opt -O2 --strip-debug --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals $< -o $@
 
-build/web/cultures.raw.wasm: $(WEB_OBJ)
+# tells the page which executable this build belongs to
+web/cultures-$(VARIANT).json: $(GEN)/table.c
+	printf '{"variant": "%s", "exe": "%s"}\n' "$(VARIANT)" "$$(basename "$(EXE)")" > $@
+
+$(WEBB)/cultures.raw.wasm: $(WEB_OBJ)
 	$(WASM_CC) -s -o $@ $^ -Wl,--global-base=939524096 -Wl,--initial-memory=1006632960 \
 	  -Wl,--max-memory=2147483648 -Wl,--export=game_main -Wl,-z,stack-size=1048576 \
 	  -mexec-model=reactor

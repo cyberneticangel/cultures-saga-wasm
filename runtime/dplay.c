@@ -1001,48 +1001,85 @@ uint32_t dplay_create(uint32_t clsid, uint32_t iid, uint32_t ppv) {
 }
 
 /* ------------------------------------------------------------------ the game's network threads
- * CDPTimer (thread proc 0x4de001): param {interval, callback, &stop}; calls callback every
- *   `interval` ms until *stop is set.  The thread frees its parameter block.
- * CFileTransferManager (thread proc 0x4df913): param = manager; while (!*(char *)param)
- *   manager_singleton()->Step().
- * Both are busy loops in the original, so running them from the pump is equivalent. */
-#define T_TIMER_PROC 0x004de001u
-#define T_FTM_PROC   0x004df913u
-#define GAME_FREE    0x004e5628u
-#define FTM_SINGLETON 0x00569988u
-#define FTM_STEP     0x004dfbd0u
-typedef struct { int used, done; uint32_t proc, interval, cb, stop, acc, last; } task_t;
+ * CDPTimer: param {interval, callback, &stop}; calls callback every `interval` ms until *stop
+ *   is set.  The thread frees its parameter block with the game's free().
+ * CFileTransferManager: param = manager; while (!*(char *)param) manager_singleton()->Step().
+ * Both are busy loops in the original, so running them from the pump is equivalent.
+ *
+ * The thread procedures are recognised by their code (the game versions place them at
+ * different addresses and compile the loops slightly differently), and the helpers they call
+ * are read from the matched call instructions.  Pattern tokens: hex byte, "??" any byte,
+ * "R" a rel32 call target to capture (4 bytes). */
+static const char *const timer_patterns[] = {
+    "51 51 53 55 56 8b 74 24 18 33 c0 85 f6 0f 95 c0 57 68 ?? ?? ?? ?? 50 6a ?? 68 ?? ?? ?? ?? e8 ?? ?? ?? ?? "
+    "8b 1d ?? ?? ?? ?? 83 c4 10 33 ed ff d3 8b 7e 08 89 44 24 1c 8b 06 89 44 24 10 8b 46 04 56 89 44 24 18 e8 R 59",
+    NULL};
+static const char *const ftm_patterns[] = {
+    /* Saga, Northland: do { } while loop */
+    "56 8b 74 24 08 33 c0 85 f6 0f 95 c0 68 ?? ?? ?? ?? 50 68 ?? ?? ?? ?? 68 ?? ?? ?? ?? e8 ?? ?? ?? ?? 83 c4 10 "
+    "eb 0c e8 R 8b c8 e8 R 80 3e 00 74 ef",
+    /* 8th Wonder: while loop */
+    "56 8b 74 24 08 33 c0 85 f6 0f 95 c0 68 ?? ?? ?? ?? 50 68 ?? ?? ?? ?? 68 ?? ?? ?? ?? e8 ?? ?? ?? ?? 83 c4 10 "
+    "80 3e 00 75 0e e8 R 8b c8 e8 R eb ed",
+    NULL};
+/* match guest code at addr; captured call targets go to out[]; returns the number captured or -1 */
+static int code_match(uint32_t addr, const char *pat, uint32_t *out) {
+    int n = 0;
+    for (const char *p = pat; *p; ) {
+        while (*p == ' ') p++;
+        if (!*p) break;
+        if (p[0] == 'R') {
+            uint32_t rel = M32(addr);
+            out[n++] = addr + 4 + rel;
+            addr += 4; p++;
+        } else if (p[0] == '?') {
+            addr++; p += 2;
+        } else {
+            unsigned v; if (sscanf(p, "%2x", &v) != 1 || M8(addr) != v) return -1;
+            addr++; p += 2;
+        }
+    }
+    return n;
+}
+enum { T_TIMER = 1, T_FTM = 2 };
+typedef struct { int used, done, kind; uint32_t proc, interval, cb, stop, acc, last, getter, step; } task_t;
 static task_t tasks[8];
 int coop_thread_create(uint32_t proc, uint32_t param) {
-    if (proc != T_TIMER_PROC && proc != T_FTM_PROC) return -1;
+    if (proc < IMAGE_BASE || proc >= IMAGE_BASE + 0x200000) return -1;
+    uint32_t cap[4];
+    int kind = 0;
+    for (int i = 0; !kind && timer_patterns[i]; i++) if (code_match(proc, timer_patterns[i], cap) == 1) kind = T_TIMER;
+    uint32_t game_free = cap[0];
+    for (int i = 0; !kind && ftm_patterns[i]; i++) if (code_match(proc, ftm_patterns[i], cap) == 2) kind = T_FTM;
+    if (!kind) return -1;
     for (int i = 0; i < 8; i++) if (!tasks[i].used) {
         task_t *t = &tasks[i];
         memset(t, 0, sizeof *t);
-        t->used = 1; t->proc = proc; t->last = plat_ticks_ms();
-        if (proc == T_TIMER_PROC) {
+        t->used = 1; t->kind = kind; t->proc = proc; t->last = plat_ticks_ms();
+        if (kind == T_TIMER) {
             t->interval = M32(param); t->cb = M32(param + 4); t->stop = M32(param + 8);
-            CALL_GUEST(GAME_FREE, param);
+            CALL_GUEST(game_free, param);
         } else {
-            t->stop = param;
+            t->stop = param; t->getter = cap[0]; t->step = cap[1];
         }
-        LOG("thread %08x started as cooperative task %d\n", proc, i);
+        LOG("thread %08x (%s) started as cooperative task %d\n", proc, kind == T_TIMER ? "network timer" : "file transfer", i);
         return i;
     }
     return -1;
 }
 static int task_step(task_t *t) {   /* returns 0 when the task finished */
     if (M8(t->stop)) { t->done = 1; return 0; }
-    if (t->proc == T_TIMER_PROC) {
+    if (t->kind == T_TIMER) {
         uint32_t now = plat_ticks_ms();
         t->acc += now - t->last; t->last = now;
         if (t->acc >= t->interval) { t->acc = 0; call_guest(t->cb, 0, NULL); }
     } else {
         uint32_t t0 = plat_ticks_ms();
         do {
-            uint32_t mgr = M32(FTM_SINGLETON);
+            uint32_t mgr = call_guest(t->getter, 0, NULL);
             if (!mgr) break;
             R.ecx = mgr;
-            call_guest(FTM_STEP, 0, NULL);
+            call_guest(t->step, 0, NULL);
         } while (!M8(t->stop) && plat_ticks_ms() - t0 < 4);
     }
     return 1;

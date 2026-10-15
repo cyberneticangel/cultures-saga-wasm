@@ -48,8 +48,8 @@ const struct native_export native_exports[] = {
 void game_start(void) {
     mem_init();
     dispatch_init();
-    load_image("GameSaga.exe");
-    setup_process("GameSaga.exe");
+    load_image(recomp_module_names[0]);
+    setup_process(recomp_module_names[0]);
     R.esp -= 4;
     M32(R.esp) = 0xdead0000u;
     dispatch(image_entry);

@@ -83,6 +83,10 @@ typedef void (*gfn_t)(void);
 struct func_entry { uint32_t addr; gfn_t fn; };
 struct import_entry { uint32_t slot; const char *dll, *name; gfn_t fn; };
 extern const uint32_t recomp_func_count, recomp_import_count;
+/* the files the code was generated from: [0] is the game executable */
+extern const uint32_t recomp_module_count;
+extern const char *const recomp_module_names[];
+extern const uint32_t recomp_module_crcs[];
 extern const struct func_entry recomp_funcs[];
 extern const struct import_entry recomp_imports[];
 

@@ -3,6 +3,7 @@
 #include <SDL2/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -208,7 +209,16 @@ int plat_poll_event(plat_event *ev) {
  * default port/userdata-native), copy-on-write.  Reads prefer the overlay. */
 static const char *overlay(void) {
     static const char *o;
-    if (!o) { o = getenv("USERDATA"); if (!o || !*o) o = "port/userdata-native"; }
+    if (!o) {
+        o = getenv("USERDATA");
+        if (!o || !*o) {   /* default: one folder per game version */
+            static char def[300];
+            int n = snprintf(def, sizeof def, "port/userdata-native/%s", recomp_module_names[0]);
+            for (char *c = def; *c; c++) *c = (char)tolower((unsigned char)*c);
+            if (n > 4 && strcmp(def + strlen(def) - 4, ".exe") == 0) def[strlen(def) - 4] = 0;
+            o = def;
+        }
+    }
     return o;
 }
 /* The game uses cp1252 (treated as Latin-1) names; the host file system uses UTF-8. */

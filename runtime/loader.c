@@ -3,6 +3,7 @@
 #include "runtime.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <strings.h>
 
 uint32_t image_entry;
 static uint32_t image_size;
@@ -22,9 +23,29 @@ static uint8_t *slurp(const char *path, uint32_t *len) {
 #define RD32(p) (*(u32u *)(p))
 
 /* Map a PE image at its preferred base and wire its IAT.  Returns the base. */
+static uint32_t crc32_of(const uint8_t *p, uint32_t n) {
+    uint32_t c = 0xffffffffu;
+    while (n--) { c ^= *p++; for (int k = 0; k < 8; k++) c = (c >> 1) ^ (0xedb88320u & -(c & 1)); }
+    return ~c;
+}
+
+/* The recompiled code only fits the exact file it was generated from. */
+static void check_module(const char *path, const uint8_t *f, uint32_t len) {
+    const char *base = strrchr(path, '\\'); base = base ? base + 1 : path;
+    for (uint32_t i = 0; i < recomp_module_count; i++)
+        if (strcasecmp(recomp_module_names[i], base) == 0) {
+            uint32_t c = crc32_of(f, len);
+            if (c != recomp_module_crcs[i])
+                fatal("%s differs from the file this build was made from (CRC %08x, expected %08x). "
+                      "Rebuild with: make web EXE=<path to this %s>", base, c, recomp_module_crcs[i], base);
+            return;
+        }
+}
+
 uint32_t map_pe(const char *path, uint32_t *entry_out, uint32_t *size_out) {
     uint32_t len;
     uint8_t *f = slurp(path, &len);
+    check_module(path, f, len);
     uint32_t pe = RD32(f + 0x3c);
     if (RD32(f + pe) != 0x4550) fatal("%s: not a PE file", path);
     uint16_t nsec = RD16(f + pe + 6);

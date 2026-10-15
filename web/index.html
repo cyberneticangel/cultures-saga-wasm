@@ -23,6 +23,8 @@
   canvas.pixelated { image-rendering: pixelated; }
   #start { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 16px; }
   #start p { color: var(--muted); max-width: 46ch; margin: 0; }
+  #start .version { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; }
+  #start select { background: #0d0b08; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
   #start .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
   #start button { font-size: 16px; padding: 10px 28px; }
   #log { display: none; height: 30vh; overflow: auto; margin: 0; padding: 8px 16px; border-top: 1px solid var(--line); background: #0d0b08; color: var(--muted); font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
@@ -55,6 +57,8 @@
 <main>
   <canvas id="screen" width="800" height="600" tabindex="0"></canvas>
   <div id="start">
+    <label class="version" id="version-row" hidden>Game version
+      <select id="version"></select></label>
     <div class="row">
       <button class="primary" id="btn-start">Start game</button>
       <button id="btn-settings2">Settings</button>
@@ -146,7 +150,7 @@ function logLine(t, cls) {
 }
 
 // ---------------------------------------------------------------- settings (per browser)
-const DEFAULTS = { scale: 'smooth', volume: 100, bgmute: false, net: '' };
+const DEFAULTS = { version: 'gamesaga', scale: 'smooth', volume: 100, bgmute: false, net: '' };
 function loadSettings() {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('cultures.settings') || '{}') }; }
   catch { return { ...DEFAULTS }; }
@@ -164,11 +168,41 @@ function updateGain() {
 }
 document.addEventListener('visibilitychange', updateGain);
 
+// ---------------------------------------------------------------- game version (one wasm per executable)
+const TITLES = {
+  gamesaga: 'Cultures – Die Saga (2005)',
+  game8thwonder: 'Cultures – 8th Wonder of the World (2003)',
+  gamenorthland: 'Cultures – Northland (2003)',
+};
+let versions = [];   // from serve.py: [{variant, exe, built, present}]
+const variant = () => $('version').value || 'gamesaga';
+async function loadVersions() {
+  try { versions = await (await fetch('/versions')).json(); } catch { versions = []; }
+  const sel = $('version');
+  sel.textContent = '';
+  for (const v of versions) {
+    const o = document.createElement('option');
+    o.value = v.variant;
+    o.textContent = (TITLES[v.variant] || v.exe) + (v.present ? '' : ' – ' + v.exe + ' missing');
+    o.disabled = !v.built || !v.present;
+    sel.appendChild(o);
+  }
+  const usable = versions.filter(v => v.built && v.present);
+  if (!usable.length) {
+    status('No playable version: build one (make gen && make web) and check that its .exe is in the game folder.');
+    $('btn-start').disabled = true;
+    return;
+  }
+  sel.value = usable.some(v => v.variant === settings.version) ? settings.version : usable[0].variant;
+  $('version-row').hidden = versions.length < 2;
+}
+$('version').addEventListener('change', () => { settings.version = variant(); saveSettings(settings); });
+
 // The game keeps its resolution in Saves/opt_glob.ini (written by its own options screen too).
 function readResolution() {
   try {
     const x = new XMLHttpRequest();
-    x.open('GET', '/fs/file?path=' + encodeURIComponent('Saves/opt_glob.ini'), false);
+    x.open('GET', '/fs/file?v=' + variant() + '&path=' + encodeURIComponent('Saves/opt_glob.ini'), false);
     x.send();
     if (x.status !== 200) return '800x600';
     const w = /gfx_screen_width\s+(\d+)/.exec(x.responseText), h = /gfx_screen_height\s+(\d+)/.exec(x.responseText);
@@ -179,7 +213,7 @@ function writeResolution(res) {
   const [w, h] = res.split('x');
   const body = `gfx_screen_width ${w}\r\ngfx_screen_height ${h}\r\ngfx_screen_depth 16\r\n`;
   const x = new XMLHttpRequest();
-  x.open('PUT', '/fs/file?path=' + encodeURIComponent('Saves/opt_glob.ini'), false);
+  x.open('PUT', '/fs/file?v=' + variant() + '&path=' + encodeURIComponent('Saves/opt_glob.ini'), false);
   x.send(body);
 }
 let resAtOpen = '';
@@ -209,6 +243,7 @@ $('set-vol').addEventListener('input', e => { $('vol-out').value = e.target.valu
 $('settings').addEventListener('close', () => {
   if ($('settings').returnValue !== 'ok') return;
   settings = {
+    version: settings.version,
     scale: $('set-scale').value, volume: +$('set-vol').value, bgmute: $('set-bgmute').checked,
     net: $('set-net').value.trim(),
   };
@@ -380,7 +415,9 @@ async function start() {
     else if (m.type === 'error') { status('Crashed – see log'); logLine(m.text, 'err'); document.body.classList.add('showlog'); netClose(); }
   };
   const logLevel = +(new URLSearchParams(location.search).get('log') ?? 1);
-  worker.postMessage({ type: 'start', shared, logLevel, netUrl: settings.net || defaultNetUrl() });
+  const ver = versions.find(v => v.variant === variant()) || { variant: 'gamesaga', exe: 'GameSaga.exe' };
+  document.title = TITLES[ver.variant] || 'Cultures';
+  worker.postMessage({ type: 'start', shared, logLevel, netUrl: settings.net || defaultNetUrl(), variant: ver.variant, exe: ver.exe });
   canvas.focus();
   requestAnimationFrame(draw);
 }
@@ -391,8 +428,12 @@ applySettings();
 $('btn-start').onclick = start;
 $('btn-log').onclick = () => document.body.classList.toggle('showlog');
 $('btn-fs').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : $('screen').requestFullscreen());
-if (new URLSearchParams(location.search).has('autostart')) start();
-else if (!crossOriginIsolated) status('Open this page through serve.py (python3 serve.py) – SharedArrayBuffer needs cross-origin isolation.');
+const params = new URLSearchParams(location.search);
+loadVersions().then(() => {
+  if (params.get('version')) $('version').value = params.get('version');
+  if (params.has('autostart')) start();
+});
+if (!crossOriginIsolated) status('Open this page through serve.py (python3 serve.py) – SharedArrayBuffer needs cross-origin isolation.');
 </script>
 </body>
 </html>

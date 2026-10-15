@@ -1,9 +1,11 @@
-// Runs the recompiled game (cultures.wasm) in a Web Worker.
+// Runs the recompiled game (cultures-<variant>.wasm) in a Web Worker.
 // The game's main loop never yields, so everything it needs is synchronous:
 // files via synchronous XHR to serve.py, input/frames/audio via a SharedArrayBuffer.
 'use strict';
 
 let mem, u8, shared, ctl, frameBytes, audio16;
+let variant = 'gamesaga';   // which game version: selects the wasm and the save folder (serve.py ?v=)
+const fsq = () => 'v=' + encodeURIComponent(variant);
 const L = self.LAYOUT = null;
 
 // ---------------------------------------------------------------- strings (cp1252)
@@ -52,7 +54,7 @@ function xhr(method, url, body, headers) {
 }
 function loadIndex() {
   const x = new XMLHttpRequest();
-  x.open('GET', '/fs/index', false);
+  x.open('GET', '/fs/index?' + fsq(), false);
   x.send();
   const idx = JSON.parse(x.responseText);
   for (const p in idx) addEntry(p, !!idx[p][0], idx[p][1]);
@@ -69,7 +71,7 @@ function getBlock(path, size, n) {
   let b = cache.get(key);
   if (b) { cache.delete(key); cache.set(key, b); return b; }
   const a = n * BLOCK, e = Math.min(size, a + BLOCK) - 1;
-  const x = xhr('GET', '/fs/file?path=' + encodeURIComponent(path), null, { Range: `bytes=${a}-${e}` });
+  const x = xhr('GET', '/fs/file?' + fsq() + '&path=' + encodeURIComponent(path), null, { Range: `bytes=${a}-${e}` });
   if (x.status !== 206 && x.status !== 200) throw new Error('read failed ' + path + ' ' + x.status);
   b = new Uint8Array(x.response);
   if (x.status === 200 && a > 0) b = b.subarray(a, e + 1);
@@ -86,7 +88,7 @@ function invalidate(path) {
 }
 function readWhole(path, size) {
   if (!size) return new Uint8Array(0);
-  const x = xhr('GET', '/fs/file?path=' + encodeURIComponent(path));
+  const x = xhr('GET', '/fs/file?' + fsq() + '&path=' + encodeURIComponent(path));
   return new Uint8Array(x.response);
 }
 
@@ -100,7 +102,7 @@ function allocFd(o) {
 function flush(f) {
   if (!f.data || !f.dirty) return;
   const body = f.data.slice(0, f.size);
-  const x = xhr('PUT', '/fs/file?path=' + encodeURIComponent(f.path), body);
+  const x = xhr('PUT', '/fs/file?' + fsq() + '&path=' + encodeURIComponent(f.path), body);
   if (x.status !== 200) console.error('write failed', f.path, x.status);
   f.dirty = false;
   invalidate(f.path);
@@ -109,7 +111,7 @@ function flush(f) {
 }
 function fsop(body) {
   const x = new XMLHttpRequest();
-  x.open('POST', '/fs/op', false);
+  x.open('POST', '/fs/op?' + fsq(), false);
   x.send(JSON.stringify(body));
   return x.status === 200;
 }
@@ -354,12 +356,14 @@ onmessage = async ev => {
   audio16 = new Int16Array(shared, AUDIO_OFF, AUDIO_FRAMES * 2);
   netRing = new Uint8Array(shared, NET_OFF, NET_SIZE);
   netUrl = msg.netUrl || '';
+  variant = msg.variant || 'gamesaga';
+  const exe = msg.exe || 'GameSaga.exe';
   try {
     postMessage({ type: 'status', text: 'Indexing game files…' });
     loadIndex();
-    if (!index.has('gamesaga.exe')) throw new Error('GameSaga.exe not found in the served game directory');
-    postMessage({ type: 'status', text: 'Loading cultures.wasm…' });
-    const { instance } = await WebAssembly.instantiateStreaming(fetch('cultures.wasm'), { env, wasi_snapshot_preview1: wasi });
+    if (!index.has(exe.toLowerCase())) throw new Error(exe + ' not found in the served game directory');
+    postMessage({ type: 'status', text: `Loading cultures-${variant}.wasm…` });
+    const { instance } = await WebAssembly.instantiateStreaming(fetch(`cultures-${variant}.wasm`), { env, wasi_snapshot_preview1: wasi });
     mem = instance.exports.memory;
     u8 = new Uint8Array(mem.buffer);
     instance.exports._initialize();

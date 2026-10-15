@@ -15,15 +15,20 @@ the overlay directory (default: ./userdata).
 
 usage: python3 serve.py [--game DIR] [--userdata DIR] [--port 8000]
 """
-import argparse, json, os, posixpath, shutil, sys, urllib.parse
+import argparse, glob, json, os, posixpath, re, shutil, sys, urllib.parse
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 import relay
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+KNOWN_EXES = ('GameSaga.exe', 'Game8thwonder.exe', 'GameNorthland.exe')
+
+
 class Handler(SimpleHTTPRequestHandler):
-    game = overlay = None
+    game_default = overlay_root = None
+    game_dirs = {}   # variant -> its own game folder (--version-dir), else game_default
+    game = overlay = None   # per request: the variant's game folder and <overlay_root>/<variant>
 
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=os.path.join(HERE, 'web'), **kw)
@@ -80,8 +85,34 @@ class Handler(SimpleHTTPRequestHandler):
         return urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
 
     # ------------------------------------------------------------ verbs
+    def select_overlay(self):
+        v = (self.query().get('v') or ['gamesaga'])[0].lower()
+        if not re.fullmatch(r'[a-z0-9_-]{1,40}', v):
+            v = 'gamesaga'
+        self.overlay = os.path.join(self.overlay_root, v)
+        self.game = self.game_dirs.get(v, self.game_default)
+
+    def versions(self):
+        """Builds in web/ (cultures-<variant>.json) and whether their executable is in the game folder."""
+        out = []
+        for j in sorted(glob.glob(os.path.join(HERE, 'web', 'cultures-*.json'))):
+            try:
+                info = json.load(open(j))
+            except Exception:
+                continue
+            info['built'] = os.path.exists(j[:-5] + '.wasm')
+            d = self.game_dirs.get(info.get('variant'), self.game_default)
+            info['present'] = os.path.isdir(d) and info.get('exe', '').lower() in {f.lower() for f in os.listdir(d)}
+            out.append(info)
+        order = [e.lower()[:-4] for e in KNOWN_EXES]
+        out.sort(key=lambda i: (order.index(i['variant']) if i.get('variant') in order else len(order), i.get('variant', '')))
+        self.reply(200, json.dumps(out).encode(), 'application/json')
+
     def do_GET(self):
         url = urllib.parse.urlparse(self.path)
+        self.select_overlay()
+        if url.path == '/versions':
+            return self.versions()
         if url.path == '/fs/index':
             return self.fs_index()
         if url.path == '/fs/file':
@@ -135,6 +166,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_PUT(self):
         url = urllib.parse.urlparse(self.path)
+        self.select_overlay()
         if url.path != '/fs/file':
             return self.reply(404)
         try:
@@ -154,6 +186,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         url = urllib.parse.urlparse(self.path)
+        self.select_overlay()
         if url.path != '/fs/op':
             return self.reply(404)
         req = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))) or b'{}')
@@ -188,19 +221,42 @@ class Handler(SimpleHTTPRequestHandler):
         self.reply(200, b'ok', 'text/plain')
 
 
+def migrate_userdata(root):
+    """Saves used to live directly in userdata/; they belong to the Saga version."""
+    old = os.path.join(root, 'Saves')
+    if os.path.isdir(old) and not os.path.exists(os.path.join(root, 'gamesaga')):
+        os.makedirs(os.path.join(root, 'gamesaga'))
+        for name in os.listdir(root):
+            if name != 'gamesaga':
+                shutil.move(os.path.join(root, name), os.path.join(root, 'gamesaga', name))
+        print('moved existing saves to', os.path.join(root, 'gamesaga'))
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--game', default=os.path.dirname(HERE), help='Cultures install directory (contains GameSaga.exe)')
+    ap.add_argument('--game', default=os.path.dirname(HERE), help='Cultures install directory (contains GameSaga.exe or another version)')
     ap.add_argument('--userdata', default=os.path.join(HERE, 'userdata'), help='where saves/settings are written')
+    ap.add_argument('--version-dir', action='append', default=[], metavar='VARIANT=DIR',
+                    help='game folder for one version, e.g. gamenorthland=/games/Northland (repeatable)')
     ap.add_argument('--port', type=int, default=8000)
     ap.add_argument('--bind', default='127.0.0.1')
     a = ap.parse_args()
-    if not os.path.exists(os.path.join(a.game, 'GameSaga.exe')):
-        sys.exit('GameSaga.exe not found in %s (use --game)' % a.game)
-    Handler.game = os.path.abspath(a.game)
-    Handler.overlay = os.path.abspath(a.userdata)
+    for spec in a.version_dir:
+        v, _, d = spec.partition('=')
+        if not d or not os.path.isdir(d):
+            sys.exit('--version-dir %s: not a directory' % spec)
+        Handler.game_dirs[v.lower()] = os.path.abspath(d)
+    present = set()
+    for d in [a.game] + list(Handler.game_dirs.values()):
+        if os.path.isdir(d):
+            present |= {f.lower() for f in os.listdir(d)}
+    if not any(e.lower() in present for e in KNOWN_EXES):
+        sys.exit('no Cultures executable (%s) found in %s (use --game or --version-dir)' % (', '.join(KNOWN_EXES), a.game))
+    Handler.game_default = os.path.abspath(a.game)
+    Handler.overlay_root = os.path.abspath(a.userdata)
+    migrate_userdata(Handler.overlay_root)
     Handler.extensions_map = {**SimpleHTTPRequestHandler.extensions_map, '.wasm': 'application/wasm', '.js': 'text/javascript'}
-    print('Cultures web port: http://%s:%d/  (game: %s, saves: %s)' % (a.bind, a.port, Handler.game, Handler.overlay))
+    print('Cultures web port: http://%s:%d/  (game: %s, saves: %s)' % (a.bind, a.port, Handler.game_default, Handler.overlay_root))
     ThreadingHTTPServer((a.bind, a.port), Handler).serve_forever()
 
 

@@ -1,6 +1,7 @@
 # Cultures – Die Saga: WebAssembly port for Firefox
 
-This port runs the original game code in the browser. `GameSaga.exe` and the music
+This port runs the original game code in the browser. The game executable (`GameSaga.exe`,
+or one of the other versions under [Game versions](#game-versions)) and the music
 driver `gedx8musicdrv.dll` are **statically recompiled** from x86 machine code to C,
 one C function per x86 function. They run on top of a hand-written runtime that
 emulates the parts of Win32, DirectDraw 7, DirectSound 8, DirectInput and DirectMusic
@@ -9,7 +10,7 @@ the game uses. Everything is compiled to WebAssembly.
 ## Play it
 
 Put this folder (`port/`) inside your Cultures – Die Saga installation, next to `GameSaga.exe`,
-build `web/cultures.wasm` as described under [Build](#build), then:
+build the game as described under [Build](#build), then:
 
 ```sh
 cd port
@@ -17,9 +18,11 @@ python3 serve.py            # serves the game folder one level up
 # open http://127.0.0.1:8000/ in Firefox, click "Start game"
 ```
 
-`serve.py --game /path/to/Cultures` points the server at another install.
+`serve.py --game /path/to/Cultures` points the server at another install. If you have built
+more than one version, pick it with **Game version** on the start screen.
 
-- Saves and settings are written to `port/userdata/`; the original files are never modified.
+- Saves and settings are written to `port/userdata/<version>/`, one folder per game version; the
+  original files are never modified.
 - The game draws its own `.cur` cursors, which appear as CSS cursors over the canvas.
 - "Log" shows the engine log, and `?log=2` gives verbose logging.
 
@@ -58,10 +61,42 @@ listed.
   Each player then enters `ws://<that machine>:8001/` under Settings → Multiplayer server. The relay
   only forwards messages and never touches files.
 
+## Game versions
+
+Each game executable gets its own build. The runtime is the same for all of them; the build
+records which file it was made from (name and CRC-32) and refuses to run with any other file.
+
+| Version | Executable | Status |
+|---|---|---|
+| Cultures – Die Saga (2005) | `GameSaga.exe` | Fully supported: single player, multiplayer, videos |
+| Cultures – 8th Wonder of the World (Nov 2003) | `Game8thwonder.exe` | Works with the Saga data: its campaign and multiplayer were tested |
+| Cultures – Northland (Sep 2003) | `GameNorthland.exe` | Needs Northland's own game data (see below) |
+
+**Each executable reads the data formats of its own release.** Northland is older than the Saga
+data in this folder: between the two, the game's object type numbers moved by one. Run on Saga
+data, Northland looks up the wrong record for every object and stops with a division by zero
+while loading the menu's demo map. The original Windows game behaves the same, since the
+data, not the port, is the problem. Point Northland at its own installation instead:
+
+```sh
+python3 serve.py --version-dir gamenorthland=/path/to/Northland
+```
+
+`--version-dir VERSION=DIR` can be given once per version. Versions without one use `--game`.
+The native build takes the game folder as its argument:
+`./build/native/gamenorthland/cultures /path/to/Northland`.
+
+Adding another version: put its `.exe` in the game folder, then run `make gen EXE=../Other.exe` and
+`make web EXE=../Other.exe`. If its own `gedx8musicdrv.dll` sits next to it, that one is used.
+If a version stops with "dispatch: no function at 0x…", the recompiler missed a function: add
+that address to `recomp/extra/<exe name in lower case>.txt` (one hex address per line) and run
+`make gen` and `make web` again. The multiplayer hooks find the game's two network threads by their code, so they work in every
+version that shares this engine's code for them; the patterns are in `runtime/dplay.c`.
+
 ## Build
 
-This repository contains no game code or data: `web/cultures.wasm` and `build/gen/` are generated
-from your own copy of `GameSaga.exe`. Build them once with the steps below, and again after changing
+This repository contains no game code or data: `web/cultures-<version>.wasm` and `build/gen/` are
+generated from your own copy of the game. Build them once with the steps below, and again after changing
 anything in `recomp/` or `runtime/`.
 
 ### Building the browser version
@@ -86,18 +121,22 @@ Tested on Linux with Python 3.14, zig 0.16 and binaryen (wasm-opt) 133.
    ```
 
 3. **Translate the game to C.** This reads `../GameSaga.exe` and `../gedx8musicdrv.dll` and writes
-   about 1 million lines of C to `build/gen/`. It takes about 30 seconds:
+   about 1 million lines of C to `build/gen/gamesaga/`. It takes about 30 seconds:
 
    ```sh
    make gen PYTHON=.venv/bin/python
    ```
 
-4. **Compile to WebAssembly.** This writes `web/cultures.wasm`. The first build takes a few minutes;
-   later builds only recompile what changed:
+4. **Compile to WebAssembly.** This writes `web/cultures-gamesaga.wasm`. The first build takes a
+   few minutes; later builds only recompile what changed:
 
    ```sh
    make web -j$(nproc)
    ```
+
+   For another version, add `EXE=`, for example `make gen EXE=../Game8thwonder.exe PYTHON=.venv/bin/python`
+   followed by `make web EXE=../Game8thwonder.exe -j$(nproc)`. To build every version found in
+   the game folder at once: `make all-versions PYTHON=.venv/bin/python -j$(nproc)`.
 
 5. **Run it:**
 
@@ -118,12 +157,12 @@ play with others, each player runs their own `serve.py` (see [Multiplayer](#mult
 Needs `clang` and SDL2 as well:
 
 ```sh
-make native -j$(nproc)                     # -> build/native/cultures
-./build/native/cultures ..                 # run from the game directory
+make native -j$(nproc)                     # -> build/native/gamesaga/cultures (EXE=... for others)
+./build/native/gamesaga/cultures ..        # run from the game directory
 ```
 
 The native build never writes to the game directory: saves and settings go to
-`port/userdata-native/` (override with `USERDATA=dir`).
+`port/userdata-native/<version>/` (override with `USERDATA=dir`).
 
 ## Layout
 
