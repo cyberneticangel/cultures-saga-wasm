@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cultures – Die Saga</title>
+<style>
+  :root {
+    --bg: #14110d; --panel: #1f1a14; --ink: #e9dfc9; --muted: #a4977d; --accent: #c99a3c; --line: #3a3126;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 16px; font-weight: 600; margin: 0; letter-spacing: .02em; }
+  header .status { color: var(--muted); font-size: 13px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button { background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #1a140b; border-color: var(--accent); font-weight: 600; }
+  main { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; position: relative; }
+  canvas { background: #000; max-width: 100%; max-height: 100%; aspect-ratio: 4 / 3; image-rendering: auto; cursor: none; outline: none; }
+  canvas.pixelated { image-rendering: pixelated; }
+  #start { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 16px; }
+  #start p { color: var(--muted); max-width: 46ch; margin: 0; }
+  #start .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  #start button { font-size: 16px; padding: 10px 28px; }
+  #log { display: none; height: 30vh; overflow: auto; margin: 0; padding: 8px 16px; border-top: 1px solid var(--line); background: #0d0b08; color: var(--muted); font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
+  body.showlog #log { display: block; }
+  .err { color: #e07a5f; }
+
+  dialog { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 0; width: min(460px, calc(100vw - 32px)); }
+  dialog::backdrop { background: rgba(0, 0, 0, .6); }
+  dialog form { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+  dialog h2 { margin: 0; font-size: 17px; font-weight: 600; }
+  dialog fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+  dialog legend { font-weight: 600; font-size: 13px; color: var(--accent); padding: 0; margin-bottom: 4px; letter-spacing: .03em; text-transform: uppercase; }
+  dialog label { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+  dialog label > span:first-child { flex: 0 0 9.5em; color: var(--muted); }
+  dialog select, dialog input[type=text] { flex: 1; min-width: 0; background: #0d0b08; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 14px; }
+  dialog input[type=range] { flex: 1; accent-color: var(--accent); }
+  dialog .hint { color: var(--muted); font-size: 12.5px; margin: 0; }
+  dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+  dialog output { min-width: 3ch; text-align: right; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Cultures – Die Saga</h1>
+  <span class="status" id="status">Ready</span>
+  <button id="btn-settings" title="Display, sound and multiplayer settings">Settings</button>
+  <button id="btn-fs" title="Fullscreen">Fullscreen</button>
+  <button id="btn-log" title="Show engine log">Log</button>
+</header>
+<main>
+  <canvas id="screen" width="800" height="600" tabindex="0"></canvas>
+  <div id="start">
+    <div class="row">
+      <button class="primary" id="btn-start">Start game</button>
+      <button id="btn-settings2">Settings</button>
+    </div>
+    <p>Runs the original game code, recompiled to WebAssembly. Game files are read from the folder <code>serve.py</code> was started with; saves go to <code>port/userdata</code>.</p>
+  </div>
+</main>
+<pre id="log"></pre>
+
+<dialog id="settings">
+  <form method="dialog">
+    <h2>Settings</h2>
+    <fieldset>
+      <legend>Display</legend>
+      <label><span>Screen resolution</span>
+        <select id="set-res">
+          <optgroup label="4:3 / 5:4">
+            <option value="800x600">800 × 600</option>
+            <option value="1024x768">1024 × 768</option>
+            <option value="1280x1024">1280 × 1024</option>
+          </optgroup>
+          <optgroup label="16:10">
+            <option value="1280x800">1280 × 800</option>
+            <option value="1440x900">1440 × 900</option>
+            <option value="1680x1050">1680 × 1050</option>
+            <option value="1920x1200">1920 × 1200</option>
+          </optgroup>
+          <optgroup label="16:9">
+            <option value="1280x720">1280 × 720</option>
+            <option value="1366x768">1366 × 768</option>
+            <option value="1600x900">1600 × 900</option>
+            <option value="1920x1080">1920 × 1080</option>
+            <option value="2560x1440">2560 × 1440</option>
+          </optgroup>
+          <optgroup label="21:9">
+            <option value="2560x1080">2560 × 1080</option>
+            <option value="3440x1440">3440 × 1440</option>
+          </optgroup>
+        </select></label>
+      <button type="button" id="set-res-fit">Match this window</button>
+      <p class="hint" id="res-hint">Takes effect the next time the game starts. You can also change it in the game's options (Grafik).</p>
+      <label><span>Scaling</span>
+        <select id="set-scale">
+          <option value="smooth">Smooth</option>
+          <option value="sharp">Sharp pixels</option>
+        </select></label>
+    </fieldset>
+    <fieldset>
+      <legend>Sound</legend>
+      <label><span>Master volume</span><input type="range" id="set-vol" min="0" max="100" step="1"><output id="vol-out"></output></label>
+      <label><span>Mute in background</span><input type="checkbox" id="set-bgmute"></label>
+    </fieldset>
+    <fieldset>
+      <legend>Multiplayer</legend>
+      <label><span>Server</span><input type="text" id="set-net" spellcheck="false" autocomplete="off"></label>
+      <p class="hint">Players who want to play together use the same server. Leave empty to use the one built into
+        <code>serve.py</code> (players on this computer). For players on other computers, run
+        <code>python3 relay.py</code> on a machine everyone can reach and enter <code>ws://&lt;its address&gt;:8001/</code> here.</p>
+    </fieldset>
+    <div class="buttons">
+      <button value="cancel" formnovalidate>Cancel</button>
+      <button class="primary" value="ok" id="set-ok">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const canvas = $('screen'), ctx = canvas.getContext('2d', { alpha: false });
+const logEl = $('log');
+const C = { EVW: 0, EVR: 1, FSEQ: 2, FW: 3, FH: 4, AW: 5, AR: 6, ARATE: 7, WAKE: 8, MW: 10, MH: 11 };
+const EV_BASE = 64, EV_N = 256, FRAME_OFF = 8192, FRAME_MAX = 3440 * 1440 * 4;   // largest display mode (ddraw.c)
+const AUDIO_OFF = FRAME_OFF + FRAME_MAX, AUDIO_FRAMES = 1 << 15;
+const NET_OFF = AUDIO_OFF + AUDIO_FRAMES * 4, NET_SIZE = 4 << 20, NET_W = 16, NET_R = 17, NET_ST = 18;
+const EV = { MOUSEMOVE: 1, MOUSEDOWN: 2, MOUSEUP: 3, KEYDOWN: 4, KEYUP: 5, CHAR: 6, QUIT: 7, WHEEL: 8 };
+let shared, ctl, frame, worker, lastSeq = 0, img = null, audioNode = null, running = false;
+let modeW = 800, modeH = 600;
+
+function status(t) { $('status').textContent = t; }
+function logLine(t, cls) {
+  const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 4;
+  const s = document.createElement('span');
+  if (cls) s.className = cls;
+  s.textContent = t + '\n';
+  logEl.appendChild(s);
+  while (logEl.childNodes.length > 3000) logEl.removeChild(logEl.firstChild);
+  if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+}
+
+// ---------------------------------------------------------------- settings (per browser)
+const DEFAULTS = { scale: 'smooth', volume: 100, bgmute: false, net: '' };
+function loadSettings() {
+  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('cultures.settings') || '{}') }; }
+  catch { return { ...DEFAULTS }; }
+}
+function saveSettings(s) { try { localStorage.setItem('cultures.settings', JSON.stringify(s)); } catch {} }
+let settings = loadSettings();
+const defaultNetUrl = () => (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/net';
+function applySettings() {
+  canvas.classList.toggle('pixelated', settings.scale === 'sharp');
+  updateGain();
+}
+function updateGain() {
+  const g = settings.bgmute && document.hidden ? 0 : settings.volume / 100;
+  if (audioNode) audioNode.port.postMessage({ gain: g });
+}
+document.addEventListener('visibilitychange', updateGain);
+
+// The game keeps its resolution in Saves/opt_glob.ini (written by its own options screen too).
+function readResolution() {
+  try {
+    const x = new XMLHttpRequest();
+    x.open('GET', '/fs/file?path=' + encodeURIComponent('Saves/opt_glob.ini'), false);
+    x.send();
+    if (x.status !== 200) return '800x600';
+    const w = /gfx_screen_width\s+(\d+)/.exec(x.responseText), h = /gfx_screen_height\s+(\d+)/.exec(x.responseText);
+    return w && h ? w[1] + 'x' + h[1] : '800x600';
+  } catch { return '800x600'; }
+}
+function writeResolution(res) {
+  const [w, h] = res.split('x');
+  const body = `gfx_screen_width ${w}\r\ngfx_screen_height ${h}\r\ngfx_screen_depth 16\r\n`;
+  const x = new XMLHttpRequest();
+  x.open('PUT', '/fs/file?path=' + encodeURIComponent('Saves/opt_glob.ini'), false);
+  x.send(body);
+}
+let resAtOpen = '';
+function openSettings() {
+  resAtOpen = readResolution();
+  $('set-res').value = resAtOpen;
+  $('res-hint').hidden = !running;
+  $('set-scale').value = settings.scale;
+  $('set-vol').value = settings.volume; $('vol-out').value = settings.volume;
+  $('set-bgmute').checked = settings.bgmute;
+  $('set-net').value = settings.net;
+  $('set-net').placeholder = defaultNetUrl();
+  $('settings').showModal();
+}
+$('set-res-fit').addEventListener('click', () => {
+  const ratio = window.innerWidth / window.innerHeight, maxW = screen.width * devicePixelRatio;
+  let best = null, bestScore = Infinity;
+  for (const o of $('set-res').options) {
+    const [w, h] = o.value.split('x').map(Number);
+    if (w > Math.max(maxW, 800)) continue;
+    const score = Math.abs(Math.log((w / h) / ratio)) * 10 - w / 10000;   /* aspect first, then size */
+    if (score < bestScore) { bestScore = score; best = o.value; }
+  }
+  if (best) $('set-res').value = best;
+});
+$('set-vol').addEventListener('input', e => { $('vol-out').value = e.target.value; });
+$('settings').addEventListener('close', () => {
+  if ($('settings').returnValue !== 'ok') return;
+  settings = {
+    scale: $('set-scale').value, volume: +$('set-vol').value, bgmute: $('set-bgmute').checked,
+    net: $('set-net').value.trim(),
+  };
+  saveSettings(settings);
+  applySettings();
+  if ($('set-res').value !== resAtOpen) writeResolution($('set-res').value);
+  if (!running) canvas.focus();
+});
+$('btn-settings').onclick = openSettings;
+$('btn-settings2').onclick = openSettings;
+
+function push(type, x = 0, y = 0, button = 0, key = 0) {
+  if (!ctl) return;
+  const w = Atomics.load(ctl, C.EVW), r = Atomics.load(ctl, C.EVR);
+  if (w - r >= EV_N - 1) return;
+  const o = EV_BASE + (w % EV_N) * 5;
+  ctl[o] = type; ctl[o + 1] = x; ctl[o + 2] = y; ctl[o + 3] = button; ctl[o + 4] = key;
+  Atomics.store(ctl, C.EVW, w + 1);
+  Atomics.add(ctl, C.WAKE, 1);
+  Atomics.notify(ctl, C.WAKE);
+}
+
+// ---------------------------------------------------------------- input
+function gamePos(e) {
+  const r = canvas.getBoundingClientRect();
+  const x = Math.floor((e.clientX - r.left) * modeW / r.width);
+  const y = Math.floor((e.clientY - r.top) * modeH / r.height);
+  return [Math.max(0, Math.min(modeW - 1, x)), Math.max(0, Math.min(modeH - 1, y))];
+}
+const btn = b => b === 0 ? 0 : b === 2 ? 1 : 2;
+canvas.addEventListener('mousemove', e => push(EV.MOUSEMOVE, ...gamePos(e)));
+canvas.addEventListener('mousedown', e => { canvas.focus(); push(EV.MOUSEDOWN, ...gamePos(e), btn(e.button)); e.preventDefault(); });
+window.addEventListener('mouseup', e => { if (ctl) push(EV.MOUSEUP, ...gamePos(e), btn(e.button)); });
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('wheel', e => { push(EV.WHEEL, 0, e.deltaY < 0 ? 1 : -1); e.preventDefault(); }, { passive: false });
+
+const VK = {
+  Escape: 0x1B, Enter: 0x0D, NumpadEnter: 0x0D, Backspace: 0x08, Tab: 0x09, Space: 0x20,
+  ArrowLeft: 0x25, ArrowUp: 0x26, ArrowRight: 0x27, ArrowDown: 0x28, Insert: 0x2D, Delete: 0x2E,
+  Home: 0x24, End: 0x23, PageUp: 0x21, PageDown: 0x22, Pause: 0x13,
+  ShiftLeft: 0xA0, ShiftRight: 0xA1, ControlLeft: 0xA2, ControlRight: 0xA3, AltLeft: 0xA4, AltRight: 0xA5,
+  NumpadAdd: 0x6B, NumpadSubtract: 0x6D, NumpadMultiply: 0x6A, NumpadDivide: 0x6F, Equal: 0xBB, Minus: 0xBD,
+  Comma: 0xBC, Period: 0xBE, Slash: 0xBF, Semicolon: 0xBA, Quote: 0xDE, BracketLeft: 0xDB, BracketRight: 0xDD, Backslash: 0xDC, Backquote: 0xC0,
+};
+function vkOf(code) {
+  if (code in VK) return VK[code];
+  let m;
+  if ((m = /^Key([A-Z])$/.exec(code))) return m[1].charCodeAt(0);
+  if ((m = /^Digit(\d)$/.exec(code))) return 0x30 + +m[1];
+  if ((m = /^Numpad(\d)$/.exec(code))) return 0x60 + +m[1];
+  if ((m = /^F(\d+)$/.exec(code))) return 0x6F + +m[1];
+  return 0;
+}
+const enc1252 = ch => { const c = ch.charCodeAt(0); return c < 256 ? c : ({ '€': 0x80 })[ch] || 0; };
+canvas.addEventListener('keydown', e => {
+  const vk = vkOf(e.code);
+  if (vk) push(EV.KEYDOWN, 0, 0, 0, vk);
+  if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) { const c = enc1252(e.key); if (c) push(EV.CHAR, 0, 0, 0, c); }
+  else if (e.key === 'Backspace') push(EV.CHAR, 0, 0, 0, 8);
+  else if (e.key === 'Enter') push(EV.CHAR, 0, 0, 0, 13);
+  if (!(e.ctrlKey && e.shiftKey) && e.key !== 'F11' && e.key !== 'F12') e.preventDefault();
+});
+canvas.addEventListener('keyup', e => { const vk = vkOf(e.code); if (vk) push(EV.KEYUP, 0, 0, 0, vk); e.preventDefault(); });
+canvas.addEventListener('blur', () => { for (const vk of [0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5]) push(EV.KEYUP, 0, 0, 0, vk); });
+
+// ---------------------------------------------------------------- display
+function draw() {
+  if (ctl) {
+    const seq = Atomics.load(ctl, C.FSEQ);
+    if (seq !== lastSeq) {
+      lastSeq = seq;
+      const w = ctl[C.FW], h = ctl[C.FH];
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; canvas.style.aspectRatio = w + ' / ' + h; img = null; }
+      if (!img) img = new ImageData(w, h);
+      img.data.set(frame.subarray(0, w * h * 4));
+      ctx.putImageData(img, 0, 0);
+    }
+  }
+  requestAnimationFrame(draw);
+}
+
+// ---------------------------------------------------------------- cursors (the game uses .cur files)
+const cursors = [];
+function setCursor(m) {
+  if (m.rgba) {
+    const c = document.createElement('canvas');
+    c.width = m.w; c.height = m.h;
+    c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(m.rgba.buffer), m.w, m.h), 0, 0);
+    cursors[m.id] = `url(${c.toDataURL()}) ${m.hx} ${m.hy}, default`;
+  }
+  canvas.style.cursor = m.id === -1 ? 'none' : m.id === -2 ? 'default' : (cursors[m.id] || 'default');
+}
+
+// ---------------------------------------------------------------- multiplayer connection
+// The game's main loop never returns to the worker's event loop, so the WebSocket lives here:
+// incoming messages are copied into a ring in the shared buffer, outgoing ones come from the worker.
+let ws = null, netRing, netQueue = [], netTimer = 0;
+function netSetState(s) { Atomics.store(ctl, NET_ST, s); Atomics.add(ctl, C.WAKE, 1); Atomics.notify(ctl, C.WAKE); }
+function netFlush() {
+  while (netQueue.length) {
+    const m = netQueue[0];
+    const w = Atomics.load(ctl, NET_W) >>> 0, r = Atomics.load(ctl, NET_R) >>> 0;
+    if (NET_SIZE - ((w - r) >>> 0) < m.length + 4) break;   // full: retry shortly
+    const put = (k, b) => { netRing[(w + k) % NET_SIZE] = b; };
+    put(0, m.length & 255); put(1, (m.length >> 8) & 255); put(2, (m.length >> 16) & 255); put(3, m.length >>> 24);
+    const start = (w + 4) % NET_SIZE, first = Math.min(m.length, NET_SIZE - start);
+    netRing.set(m.subarray(0, first), start);
+    if (m.length > first) netRing.set(m.subarray(first), 0);
+    Atomics.store(ctl, NET_W, (w + 4 + m.length) | 0);
+    netQueue.shift();
+  }
+  Atomics.add(ctl, C.WAKE, 1); Atomics.notify(ctl, C.WAKE);
+  clearTimeout(netTimer);
+  if (netQueue.length) netTimer = setTimeout(netFlush, 4);
+}
+function netOpen(url) {
+  netClose();
+  netQueue = [];
+  logLine('multiplayer: connecting to ' + url);
+  try { ws = new WebSocket(url); } catch (e) { logLine('multiplayer: ' + e, 'err'); netSetState(3); return; }
+  ws.binaryType = 'arraybuffer';
+  const me = ws;
+  ws.onopen = () => { if (ws === me) netSetState(2); };
+  ws.onmessage = ev => { if (ws === me) { netQueue.push(new Uint8Array(ev.data)); netFlush(); } };
+  ws.onclose = ws.onerror = () => {
+    if (ws !== me) return;
+    logLine('multiplayer: connection to ' + url + ' closed', 'err');
+    ws = null; netSetState(3);
+  };
+}
+function netClose() { if (ws) { const w = ws; ws = null; w.close(); } }
+
+// ---------------------------------------------------------------- start
+async function start() {
+  if (!crossOriginIsolated) {
+    status('This page must be served by serve.py (needs cross-origin isolation for SharedArrayBuffer).');
+    return;
+  }
+  running = true;
+  $('start').style.display = 'none';
+  shared = new SharedArrayBuffer(NET_OFF + NET_SIZE);
+  ctl = new Int32Array(shared, 0, 2048);
+  frame = new Uint8Array(shared, FRAME_OFF, FRAME_MAX);
+  netRing = new Uint8Array(shared, NET_OFF, NET_SIZE);
+
+  try {
+    const ac = new AudioContext({ sampleRate: 44100 });
+    await ac.audioWorklet.addModule('audio.js');
+    audioNode = new AudioWorkletNode(ac, 'ring-player', { outputChannelCount: [2] });
+    audioNode.port.postMessage({ shared, audioOff: AUDIO_OFF, frames: AUDIO_FRAMES });
+    audioNode.connect(ac.destination);
+    updateGain();
+    if (ac.state !== 'running') ac.resume();
+  } catch (e) {
+    logLine('audio unavailable: ' + e, 'err');
+  }
+
+  worker = new Worker('worker.js');
+  worker.onmessage = ev => {
+    const m = ev.data;
+    if (m.type === 'log') logLine(m.text);
+    else if (m.type === 'status') status(m.text);
+    else if (m.type === 'mode') { modeW = m.w; modeH = m.h; }
+    else if (m.type === 'cursor') setCursor(m);
+    else if (m.type === 'net-open') netOpen(m.url);
+    else if (m.type === 'net-send') { if (ws && ws.readyState === 1) ws.send(m.data); }
+    else if (m.type === 'net-close') netClose();
+    else if (m.type === 'exit') { status('Game exited (' + m.code + ')'); logLine('exit ' + m.code); netClose(); }
+    else if (m.type === 'error') { status('Crashed – see log'); logLine(m.text, 'err'); document.body.classList.add('showlog'); netClose(); }
+  };
+  const logLevel = +(new URLSearchParams(location.search).get('log') ?? 1);
+  worker.postMessage({ type: 'start', shared, logLevel, netUrl: settings.net || defaultNetUrl() });
+  canvas.focus();
+  requestAnimationFrame(draw);
+}
+
+// debugging/automation hook
+window.__game = { push, frameSeq: () => ctl ? Atomics.load(ctl, C.FSEQ) : 0 };
+applySettings();
+$('btn-start').onclick = start;
+$('btn-log').onclick = () => document.body.classList.toggle('showlog');
+$('btn-fs').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : $('screen').requestFullscreen());
+if (new URLSearchParams(location.search).has('autostart')) start();
+else if (!crossOriginIsolated) status('Open this page through serve.py (python3 serve.py) – SharedArrayBuffer needs cross-origin isolation.');
+</script>
+</body>
+</html>

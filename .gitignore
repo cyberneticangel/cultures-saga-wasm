@@ -1,0 +1,8 @@
+build/
+userdata/
+extracted/
+__pycache__/
+userdata-native/
+.venv/
+# compiled from the game executable: build it from your own copy (see README)
+web/cultures.wasm
