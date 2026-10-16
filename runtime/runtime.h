@@ -94,7 +94,8 @@ void plat_audio_push(const int16_t *frames, int n);
 void ddraw_present_if_dirty(void);
 void input_pump(void);         /* pulls platform events into the message queue / dinput state */
 void audio_update(void);
-uint32_t vfs_resolve(const char *winpath, char *out, int cap);   /* windows path -> host relative */
+uint32_t vfs_resolve(const char *winpath, char *out, int cap);
+extern const char *game_exe_name;   /* main.c: the game executable in the game folder (found by CRC) */   /* windows path -> host relative */
 extern char exe_dir_win[260];
 /* multiplayer (dplay.c): DirectPlay 8 over the relay, plus the game's network threads as cooperative tasks */
 uint32_t dplay_create(uint32_t clsid, uint32_t iid, uint32_t ppv);

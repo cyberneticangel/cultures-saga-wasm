@@ -63,35 +63,113 @@ listed.
 
 ## Game versions
 
-Each game executable gets its own build. The runtime is the same for all of them; the build
-records which file it was made from (name and CRC-32) and refuses to run with any other file.
+Each game executable gets its own build. Versions are recognised by the **content** of the
+executable (its CRC-32), not by its file name: the original releases all call it `Game.exe`, and
+renamed copies work too. The build records the checksum and only runs with that exact file;
+it finds it in the game folder whatever it is called.
 
-| Version | Executable | Status |
+| Version | Build name | Status |
 |---|---|---|
-| Cultures – Die Saga (2005) | `GameSaga.exe` | Fully supported: single player, multiplayer, videos |
-| Cultures – 8th Wonder of the World (Nov 2003) | `Game8thwonder.exe` | Works with the Saga data: its campaign and multiplayer were tested |
-| Cultures – Northland (Sep 2003) | `GameNorthland.exe` | Needs Northland's own game data (see below) |
+| Cultures – Die Saga (2005) | `gamesaga` | Fully supported: single player, multiplayer, videos |
+| Cultures – 8th Wonder of the World (Nov 2003) | `game8thwonder` | Works with its own data (menu tested) and with the Saga data (campaign and multiplayer tested) |
+| Cultures – Northland (Sep 2003) | `gamenorthland` | Needs its own data: menu and first mission tested |
 
-**Each executable reads the data formats of its own release.** Northland is older than the Saga
-data in this folder: between the two, the game's object type numbers moved by one. Run on Saga
-data, Northland looks up the wrong record for every object and stops with a division by zero
-while loading the menu's demo map. The original Windows game behaves the same, since the
-data, not the port, is the problem. Point Northland at its own installation instead:
+Any other executable of this engine builds as `<file name>-<crc>` (for example `game-8e30ed31`).
+`python3 recomp/variant.py name /path/to/Game.exe` shows what a file is recognised as.
+
+### Playing 8th Wonder of the World and Northland
+
+These are separate games with their own data, and are not part of Die Saga. You need your own
+copy of each, for example the GOG releases. The steps assume the browser version of Die Saga
+is already built (see [Build](#build)).
+
+1. **Copy each game's install folder into the Saga folder**, next to `port/`. The folder names
+   don't matter. The whole install is needed, not just `Game.exe`: each game has its own maps,
+   graphics and texts in `DataX/`.
+
+   ```
+   Cultures Saga/
+     GameSaga.exe, DataX/, ...
+     8th Wonder of the World/   Game.exe, DataX/, gedx8musicdrv.dll, ...
+     Northland/                 Game.exe, DataX/, gedx8musicdrv.dll, ...
+     port/
+   ```
+
+   An existing Windows or Wine install can be copied as it is. Without Windows, GOG's offline
+   installers can also be unpacked with `innoextract` (not tested here).
+
+2. **Check that the executables are recognised:**
+
+   ```sh
+   cd port
+   python3 recomp/variant.py scan ..
+   ```
+
+   Both `Game.exe` files should be listed. `python3 recomp/variant.py name "../Northland/Game.exe"`
+   should print `gamenorthland`, and the 8th Wonder one `game8thwonder`. A name like
+   `game-1a2b3c4d` means a different release or patch level than the one tested here; it can
+   still be built, but may need fixes (see the end of this section).
+
+3. **Translate and compile each game.** Each takes about as long as the Saga build:
+
+   ```sh
+   make gen EXE="../8th Wonder of the World/Game.exe" PYTHON=.venv/bin/python
+   make web EXE="../8th Wonder of the World/Game.exe" -j$(nproc)
+   make gen EXE=../Northland/Game.exe PYTHON=.venv/bin/python
+   make web EXE=../Northland/Game.exe -j$(nproc)
+   ```
+
+   Or build everything found at once with `make all-versions PYTHON=.venv/bin/python -j$(nproc)`.
+   This also builds any other game executables in the folders (such as the `GameMp.exe` files
+   GOG ships), which haven't been tested.
+
+4. **Start the server** with `python3 serve.py`, as for Die Saga. It prints every executable
+   it found. Open http://127.0.0.1:8000/, pick the game under **Game version** and click
+   **Start game**. Each game runs from its own folder and keeps its saves and settings in
+   `port/userdata/<version>/`.
+
+5. **Native build (optional):** `make native EXE=../Northland/Game.exe -j$(nproc)`, then
+   `./build/native/gamenorthland/cultures ../Northland`.
+
+### Several installations
+
+`serve.py` and `make all-versions` look in the game folder and one level below it (the layout
+above). They find each game's executable whatever it is called, and run each version from its
+own folder. If a version is in several folders (say `GameNorthland.exe` copied next to
+`GameSaga.exe`, and `Northland/Game.exe`), the folder with the fewest game executables wins,
+which is that game's own install.
+
+Installs elsewhere can be given with `--game` (repeatable):
 
 ```sh
-python3 serve.py --version-dir gamenorthland=/path/to/Northland
+python3 serve.py --game /games/Cultures8thWonder --game /games/CulturesNorthland
 ```
 
-`--version-dir VERSION=DIR` can be given once per version. Versions without one use `--game`.
-The native build takes the game folder as its argument:
-`./build/native/gamenorthland/cultures /path/to/Northland`.
+To build them, point `EXE` at each executable, or build everything at once:
 
-Adding another version: put its `.exe` in the game folder, then run `make gen EXE=../Other.exe` and
-`make web EXE=../Other.exe`. If its own `gedx8musicdrv.dll` sits next to it, that one is used.
+```sh
+make gen EXE=/games/Cultures8thWonder/Game.exe PYTHON=.venv/bin/python && make web EXE=/games/Cultures8thWonder/Game.exe -j$(nproc)
+make all-versions GAME_DIRS="/games/Cultures8thWonder /games/CulturesNorthland" PYTHON=.venv/bin/python -j$(nproc)
+```
+
+`all-versions` builds each version once, from the executables in `GAME_DIRS` (default: the folder
+above `port/`) and their subfolders. Subfolders may have spaces in their names; folders listed
+in `GAME_DIRS` may not (use `EXE=` for those). The music driver `gedx8musicdrv.dll` next to
+each executable is used for its build. `--version-dir VERSION=DIR` forces a version's folder if
+automatic matching isn't wanted. The native build takes the game folder as its argument:
+`./build/native/gamenorthland/cultures ../Northland`.
+
+**Each executable reads the data formats of its own release.** Northland is older than the Saga
+data: between the two, the game's object type numbers moved by one. Run on Saga data, Northland
+looks up the wrong record for every object and stops with a division by zero while loading the
+menu's demo map. The original Windows game behaves the same, so give Northland its own
+installation.
+
 If a version stops with "dispatch: no function at 0x…", the recompiler missed a function: add
-that address to `recomp/extra/<exe name in lower case>.txt` (one hex address per line) and run
-`make gen` and `make web` again. The multiplayer hooks find the game's two network threads by their code, so they work in every
-version that shares this engine's code for them; the patterns are in `runtime/dplay.c`.
+that address to `recomp/extra/<exe file name in lower case>.txt` (one hex address per line) and
+run `make gen` and `make web` again. The multiplayer hooks find the game's two network threads
+by their code, so they work in every version that shares this engine's code for them; the
+patterns are in `runtime/dplay.c`.
 
 ## Build
 

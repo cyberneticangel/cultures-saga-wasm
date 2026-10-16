@@ -22,12 +22,43 @@ import relay
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
-KNOWN_EXES = ('GameSaga.exe', 'Game8thwonder.exe', 'GameNorthland.exe')
+sys.path.insert(0, os.path.join(HERE, 'recomp'))
+import variant   # identifies game executables by content (they are all called Game.exe originally)
+
+
+class GameFolders:
+    """The game folders given with --game, and the game executables in them, by CRC-32."""
+
+    def __init__(self, dirs):
+        self.dirs = [os.path.abspath(d) for d in dirs]
+        self.cache = {}   # path -> (mtime, size, description)
+
+    def executables(self):
+        """[(folder, description)] for every game executable, rescanned when files change."""
+        out = []
+        for d in variant.game_folders(self.dirs):
+            for p in variant.scan_dir(d):
+                st = os.stat(p)
+                c = self.cache.get(p)
+                if not c or c[:2] != (st.st_mtime, st.st_size):
+                    c = self.cache[p] = (st.st_mtime, st.st_size, variant.describe(p))
+                out.append((d, c[2]))
+        return out
+
+    def owner(self, v):
+        """(folder, description) for variant v: if several folders have it, the one dedicated to it
+        (fewest game executables), so Northland/Game.exe beats a GameNorthland.exe copied into Saga's folder."""
+        found = self.executables()
+        count = {}
+        for d, _ in found:
+            count[d] = count.get(d, 0) + 1
+        mine = [(count[d], i, d, e) for i, (d, e) in enumerate(found) if e['variant'] == v]
+        return min(mine)[2:] if mine else (None, None)
 
 
 class Handler(SimpleHTTPRequestHandler):
-    game_default = overlay_root = None
-    game_dirs = {}   # variant -> its own game folder (--version-dir), else game_default
+    game_default = overlay_root = folders = None
+    game_dirs = {}   # variant -> its own game folder (--version-dir), else found by content, else game_default
     game = overlay = None   # per request: the variant's game folder and <overlay_root>/<variant>
 
     def __init__(self, *a, **kw):
@@ -90,7 +121,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not re.fullmatch(r'[a-z0-9_-]{1,40}', v):
             v = 'gamesaga'
         self.overlay = os.path.join(self.overlay_root, v)
-        self.game = self.game_dirs.get(v, self.game_default)
+        self.game = self.game_dirs.get(v) or self.folders.owner(v)[0] or self.game_default
 
     def versions(self):
         """Builds in web/ (cultures-<variant>.json) and whether their executable is in the game folder."""
@@ -101,10 +132,19 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception:
                 continue
             info['built'] = os.path.exists(j[:-5] + '.wasm')
-            d = self.game_dirs.get(info.get('variant'), self.game_default)
-            info['present'] = os.path.isdir(d) and info.get('exe', '').lower() in {f.lower() for f in os.listdir(d)}
+            # present = an executable with this build's content is in one of the game folders
+            forced = self.game_dirs.get(info.get('variant'))
+            if forced:
+                found = [(d, e) for d, e in self.folders.executables() if d == forced and e['variant'] == info.get('variant')]
+                found = found or [(forced, {'exe': info.get('exe', '')})]
+            else:
+                d, e = self.folders.owner(info.get('variant'))
+                found = [(d, e)] if d else []
+            info['present'] = bool(found) and os.path.exists(os.path.join(found[0][0], found[0][1]['exe']))
+            if found:
+                info['exe'] = found[0][1]['exe']
             out.append(info)
-        order = [e.lower()[:-4] for e in KNOWN_EXES]
+        order = [v for v, _ in variant.KNOWN.values()]
         out.sort(key=lambda i: (order.index(i['variant']) if i.get('variant') in order else len(order), i.get('variant', '')))
         self.reply(200, json.dumps(out).encode(), 'application/json')
 
@@ -127,7 +167,7 @@ class Handler(SimpleHTTPRequestHandler):
         for root, tag in ((self.game, 'g'), (self.overlay, 'o')):
             if not os.path.isdir(root):
                 continue
-            for dp, dns, fns in os.walk(root):
+            for dp, dns, fns in os.walk(root, followlinks=True):
                 dns[:] = [d for d in dns if os.path.realpath(os.path.join(dp, d)) != HERE]
                 rd = os.path.relpath(dp, root)
                 rd = '' if rd == '.' else rd.replace(os.sep, '/')
@@ -234,7 +274,9 @@ def migrate_userdata(root):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--game', default=os.path.dirname(HERE), help='Cultures install directory (contains GameSaga.exe or another version)')
+    ap.add_argument('--game', action='append', default=[], metavar='DIR',
+                    help='Cultures install folder, also searched one level deep (repeatable; default: the folder above port/). '
+                         'Game executables are recognised by content, whatever they are called.')
     ap.add_argument('--userdata', default=os.path.join(HERE, 'userdata'), help='where saves/settings are written')
     ap.add_argument('--version-dir', action='append', default=[], metavar='VARIANT=DIR',
                     help='game folder for one version, e.g. gamenorthland=/games/Northland (repeatable)')
@@ -246,17 +288,21 @@ def main():
         if not d or not os.path.isdir(d):
             sys.exit('--version-dir %s: not a directory' % spec)
         Handler.game_dirs[v.lower()] = os.path.abspath(d)
-    present = set()
-    for d in [a.game] + list(Handler.game_dirs.values()):
-        if os.path.isdir(d):
-            present |= {f.lower() for f in os.listdir(d)}
-    if not any(e.lower() in present for e in KNOWN_EXES):
-        sys.exit('no Cultures executable (%s) found in %s (use --game or --version-dir)' % (', '.join(KNOWN_EXES), a.game))
-    Handler.game_default = os.path.abspath(a.game)
+    games = a.game or [os.path.dirname(HERE)]
+    for d in games:
+        if not os.path.isdir(d):
+            sys.exit('--game %s: not a directory' % d)
+    Handler.folders = GameFolders(games + list(Handler.game_dirs.values()))
+    found = Handler.folders.executables()
+    if not found:
+        sys.exit('no Cultures game executable found in %s (use --game DIR)' % ', '.join(games))
+    for d, e in found:
+        print('  %-40s %-14s %s' % (os.path.join(d, e['exe']), e['variant'], e['title']))
+    Handler.game_default = os.path.abspath(games[0])
     Handler.overlay_root = os.path.abspath(a.userdata)
     migrate_userdata(Handler.overlay_root)
     Handler.extensions_map = {**SimpleHTTPRequestHandler.extensions_map, '.wasm': 'application/wasm', '.js': 'text/javascript'}
-    print('Cultures web port: http://%s:%d/  (game: %s, saves: %s)' % (a.bind, a.port, Handler.game_default, Handler.overlay_root))
+    print('Cultures web port: http://%s:%d/  (game: %s, saves: %s)' % (a.bind, a.port, ', '.join(games), Handler.overlay_root))
     ThreadingHTTPServer((a.bind, a.port), Handler).serve_forever()
 
 

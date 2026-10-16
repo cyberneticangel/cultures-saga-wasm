@@ -213,9 +213,7 @@ static const char *overlay(void) {
         o = getenv("USERDATA");
         if (!o || !*o) {   /* default: one folder per game version */
             static char def[300];
-            int n = snprintf(def, sizeof def, "port/userdata-native/%s", recomp_module_names[0]);
-            for (char *c = def; *c; c++) *c = (char)tolower((unsigned char)*c);
-            if (n > 4 && strcmp(def + strlen(def) - 4, ".exe") == 0) def[strlen(def) - 4] = 0;
+            snprintf(def, sizeof def, "port/userdata-native/%s", recomp_variant);
             o = def;
         }
     }

@@ -15,6 +15,7 @@ from capstone import x86_const as X
 from pe import Image
 from analyze import Analyzer, COND_JUMPS
 import regsum
+import variant
 from regsum import ALL, ESP, IMPORT_USE, IMPORT_DEF, CALLER_SAVED, regs_of
 
 FLAGS = ('CF', 'ZF', 'SF', 'OF', 'PF')
@@ -1043,6 +1044,7 @@ class Translator:
         t.append('const uint32_t recomp_module_count = %d;' % len(self.module_files))
         t.append('const char *const recomp_module_names[] = {%s};' % ', '.join('"%s"' % n for n, _ in self.module_files))
         t.append('const uint32_t recomp_module_crcs[] = {%s};' % ', '.join('0x%08xu' % c for _, c in self.module_files))
+        t.append('const char recomp_variant[] = "%s";' % self.variant)
         # weak default stubs for unimplemented imports
         for dll, name in imps:
             t.append('__attribute__((weak)) void %s(void) { hle_missing("%s", "%s"); }' % (imp_name(dll, name), dll, name))
@@ -1084,6 +1086,7 @@ if __name__ == '__main__':
         mods.append(Module(img, an))
     tr = Translator(mods)
     tr.module_files = files
+    tr.variant = variant.describe(paths[0])['variant']
     os.makedirs(outdir, exist_ok=True)
     tr.run(outdir)
     for k, v in sorted(tr.unsupported.items(), key=lambda kv: -kv[1]):

@@ -36,7 +36,7 @@ static int h_get(uint32_t h, int type) {
 static uint32_t cmdline_ptr, env_ptr, envw_ptr;
 
 HLE(KERNEL32, GetCommandLineA) {
-    if (!cmdline_ptr) { char c[300]; snprintf(c, sizeof c, "%s\\%s", exe_dir_win, recomp_module_names[0]); cmdline_ptr = guest_strdup(c); }
+    if (!cmdline_ptr) { char c[300]; snprintf(c, sizeof c, "%s\\%s", exe_dir_win, game_exe_name); cmdline_ptr = guest_strdup(c); }
     RET_STD(0, cmdline_ptr);
 }
 HLE(KERNEL32, GetVersion) { RET_STD(0, 0x0A280105u); }
@@ -54,7 +54,7 @@ HLE(KERNEL32, GetModuleHandleA) {
 HLE(KERNEL32, GetModuleFileNameA) {
     uint32_t buf = ARG(1), n = ARG(2);
     char tmp[300];
-    snprintf(tmp, sizeof tmp, "%s\\%s", exe_dir_win, recomp_module_names[0]);
+    snprintf(tmp, sizeof tmp, "%s\\%s", exe_dir_win, game_exe_name);
     uint32_t l = (uint32_t)strlen(tmp);
     if (l >= n) l = n - 1;
     memcpy(PTR(buf), tmp, l); M8(buf + l) = 0;

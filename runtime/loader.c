@@ -23,7 +23,7 @@ static uint8_t *slurp(const char *path, uint32_t *len) {
 #define RD32(p) (*(u32u *)(p))
 
 /* Map a PE image at its preferred base and wire its IAT.  Returns the base. */
-static uint32_t crc32_of(const uint8_t *p, uint32_t n) {
+uint32_t crc32_of(const uint8_t *p, uint32_t n) {
     uint32_t c = 0xffffffffu;
     while (n--) { c ^= *p++; for (int k = 0; k < 8; k++) c = (c >> 1) ^ (0xedb88320u & -(c & 1)); }
     return ~c;

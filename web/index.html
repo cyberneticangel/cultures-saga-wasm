@@ -183,7 +183,7 @@ async function loadVersions() {
   for (const v of versions) {
     const o = document.createElement('option');
     o.value = v.variant;
-    o.textContent = (TITLES[v.variant] || v.exe) + (v.present ? '' : ' – ' + v.exe + ' missing');
+    o.textContent = (v.title || TITLES[v.variant] || v.exe) + (v.present ? '' : ' – not in the game folder');
     o.disabled = !v.built || !v.present;
     sel.appendChild(o);
   }
@@ -416,7 +416,7 @@ async function start() {
   };
   const logLevel = +(new URLSearchParams(location.search).get('log') ?? 1);
   const ver = versions.find(v => v.variant === variant()) || { variant: 'gamesaga', exe: 'GameSaga.exe' };
-  document.title = TITLES[ver.variant] || 'Cultures';
+  document.title = ver.title || TITLES[ver.variant] || 'Cultures';
   worker.postMessage({ type: 'start', shared, logLevel, netUrl: settings.net || defaultNetUrl(), variant: ver.variant, exe: ver.exe });
   canvas.focus();
   requestAnimationFrame(draw);

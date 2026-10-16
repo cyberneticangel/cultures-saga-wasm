@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <strings.h>
 
 int log_level = 1;
 
@@ -44,12 +45,40 @@ const struct native_export native_exports[] = {
     {"dsound.dll", "DirectSoundCreate8", imp_DSOUND_ord11},
     {NULL, NULL, NULL}};
 
+/* The executable this build was made from, found by content: the original releases are all
+ * called Game.exe, so the file in the game folder may have another name than at build time. */
+const char *game_exe_name;
+uint32_t crc32_of(const uint8_t *p, uint32_t n);
+uint8_t *vfs_read_all(const char *winpath, uint32_t *len);
+static int exe_matches(const char *name) {
+    uint32_t len;
+    uint8_t *d = vfs_read_all(name, &len);
+    int ok = d && crc32_of(d, len) == recomp_module_crcs[0];
+    free(d);
+    return ok;
+}
+static const char *find_game_exe(void) {
+    if (exe_matches(recomp_module_names[0])) return recomp_module_names[0];
+    static char names[1 << 16]; static uint8_t isdir[2048];
+    int n = plat_listdir(".", names, sizeof names, isdir, 2048);
+    const char *p = names;
+    for (int i = 0; i < n; i++, p += strlen(p) + 1) {
+        size_t l = strlen(p);
+        if (isdir[i] || l < 5 || strcasecmp(p + l - 4, ".exe") != 0) continue;
+        if (exe_matches(p)) { LOG("game executable: %s (built from %s)\n", p, recomp_module_names[0]); return p; }
+    }
+    fatal("this build is for %s (CRC-32 %08x), but no executable with that content is in the game folder. "
+          "Build for your executable with: make gen EXE=<path> && make web EXE=<path>",
+          recomp_module_names[0], recomp_module_crcs[0]);
+}
+
 /* Runs the game's entry point; never returns (ExitProcess ends the process). */
 void game_start(void) {
     mem_init();
     dispatch_init();
-    load_image(recomp_module_names[0]);
-    setup_process(recomp_module_names[0]);
+    game_exe_name = find_game_exe();
+    load_image(game_exe_name);
+    setup_process(game_exe_name);
     R.esp -= 4;
     M32(R.esp) = 0xdead0000u;
     dispatch(image_entry);

@@ -87,6 +87,7 @@ extern const uint32_t recomp_func_count, recomp_import_count;
 extern const uint32_t recomp_module_count;
 extern const char *const recomp_module_names[];
 extern const uint32_t recomp_module_crcs[];
+extern const char recomp_variant[];   /* build name, from the executable's content (recomp/variant.py) */
 extern const struct func_entry recomp_funcs[];
 extern const struct import_entry recomp_imports[];
 

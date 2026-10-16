@@ -3,17 +3,18 @@
 #   make gen    [EXE=...]   regenerate C from the game executable (needs python + capstone + pefile)
 #   make web    [EXE=...]   WebAssembly build      -> web/cultures-<variant>.wasm (+ .json)
 #   make native [EXE=...]   SDL2 build for debugging -> build/native/<variant>/cultures
-#   make all-versions       gen + web for every supported executable found in GAME_DIR
+#   make all-versions       gen + web for every game executable found in GAME_DIRS
 #
-# EXE defaults to GameSaga.exe; the variant name is the executable's name in lower case without
-# .exe (gamesaga, game8thwonder, gamenorthland).
-GAME_DIR ?= ..
-EXE      ?= $(GAME_DIR)/GameSaga.exe
-PYTHON   ?= python3
-OPT      ?= -O2
-VERSIONS ?= GameSaga.exe Game8thwonder.exe GameNorthland.exe
+# EXE defaults to GameSaga.exe.  The variant name comes from the executable's content (its CRC-32,
+# see recomp/variant.py), not its file name: the original releases are all called Game.exe.
+# Known executables get gamesaga / game8thwonder / gamenorthland, others <name>-<crc>.
+GAME_DIR  ?= ..
+GAME_DIRS ?= $(GAME_DIR)
+EXE       ?= $(GAME_DIR)/GameSaga.exe
+PYTHON    ?= python3
+OPT       ?= -O2
 
-VARIANT  := $(shell basename "$(EXE)" | tr 'A-Z' 'a-z' | sed 's/\.exe$$//')
+VARIANT  := $(shell python3 recomp/variant.py name "$(EXE)" 2>/dev/null || basename "$(EXE)" .exe | tr 'A-Z' 'a-z')
 GEN      := build/gen/$(VARIANT)
 GEN_SRC  := $(wildcard $(GEN)/code_*.c) $(GEN)/table.c
 RT_SRC   := cpu.c mem.c loader.c vfs.c kernel32.c user32.c misc.c ddraw.c dsound.c dinput.c main.c dmusic.c dmsynth.c cursor.c dplay.c video.c
@@ -25,18 +26,18 @@ CFLAGS_COMMON := -std=gnu11 -Iruntime -I$(GEN) -fno-strict-aliasing -fwrapv \
 all: native
 
 # the music driver next to the executable (each game version ships its own), else GAME_DIR's
-MUSIC_DLL = $(firstword $(wildcard $(dir $(EXE))gedx8musicdrv.dll) $(GAME_DIR)/gedx8musicdrv.dll)
+MUSIC_DLL := $(shell d=$$(dirname "$(EXE)"); [ -f "$$d/gedx8musicdrv.dll" ] && echo "$$d/gedx8musicdrv.dll" || echo "$(GAME_DIR)/gedx8musicdrv.dll")
 
 gen:
-	$(PYTHON) recomp/translate.py $(GEN) $(EXE) $(MUSIC_DLL)
+	$(PYTHON) recomp/translate.py $(GEN) "$(EXE)" "$(MUSIC_DLL)"
 
+# every Cultures executable in GAME_DIRS and their subfolders (space-separated; recognised by
+# content), each version once
 all-versions:
-	@for exe in $(VERSIONS); do \
-	  if [ -f "$(GAME_DIR)/$$exe" ]; then \
-	    echo "== $$exe"; \
-	    $(MAKE) --no-print-directory gen EXE="$(GAME_DIR)/$$exe" && \
-	    $(MAKE) --no-print-directory web EXE="$(GAME_DIR)/$$exe" || exit 1; \
-	  else echo "== $$exe: not in $(GAME_DIR), skipped"; fi; \
+	@python3 recomp/variant.py scan-unique $(GAME_DIRS) | while IFS= read -r exe; do \
+	  echo "== $$exe -> $$(python3 recomp/variant.py name "$$exe")"; \
+	  $(MAKE) --no-print-directory gen EXE="$$exe" && \
+	  $(MAKE) --no-print-directory web EXE="$$exe" || exit 1; \
 	done
 
 # ---------------------------------------------------------------- native
@@ -78,7 +79,7 @@ web/cultures-$(VARIANT).wasm: $(WEBB)/cultures.raw.wasm
 
 # tells the page which executable this build belongs to
 web/cultures-$(VARIANT).json: $(GEN)/table.c
-	printf '{"variant": "%s", "exe": "%s"}\n' "$(VARIANT)" "$$(basename "$(EXE)")" > $@
+	python3 recomp/variant.py json "$(EXE)" > $@
 
 $(WEBB)/cultures.raw.wasm: $(WEB_OBJ)
 	$(WASM_CC) -s -o $@ $^ -Wl,--global-base=939524096 -Wl,--initial-memory=1006632960 \
