@@ -54,15 +54,16 @@ static void present_surface(Surf *s) {
     int w = s->w, h = s->h;
     if (rgba_cap < w * h) { free(rgba); rgba = malloc(sizeof(uint32_t) * w * h); rgba_cap = w * h; }
     if (s->bpp == 16) {
-        for (int y = 0; y < h; y++) {
-            const uint16_t *src = (const uint16_t *)PTR(s->pixels + y * s->pitch);
-            uint32_t *d = rgba + y * w;
-            for (int x = 0; x < w; x++) {
-                uint32_t p = src[x];
-                uint32_t r = (p >> 11) & 31, g = (p >> 5) & 63, b = p & 31;
-                d[x] = 0xff000000u | ((b << 3 | b >> 2) << 16) | ((g << 2 | g >> 4) << 8) | (r << 3 | r >> 2);
-            }
+        /* 16-bit (the game's usual mode) goes out as it is: the display converts 5:6:5 on the GPU */
+        const void *src = PTR(s->pixels);
+        if (s->pitch != w * 2) {
+            for (int y = 0; y < h; y++) memcpy((uint16_t *)rgba + y * w, PTR(s->pixels + y * s->pitch), (size_t)w * 2);
+            src = rgba;
         }
+        plat_present(src, w, h, PLAT_RGB565);
+        last_present = plat_ticks_ms();
+        dirty = 0;
+        return;
     } else if (s->bpp == 8) {
         const uint32_t *pal = s->palette >= 0 ? pals[s->palette].entries : pals[0].entries;
         for (int y = 0; y < h; y++) {
@@ -77,7 +78,7 @@ static void present_surface(Surf *s) {
             for (int x = 0; x < w; x++) { uint32_t p = src[x]; d[x] = 0xff000000u | ((p & 0xff) << 16) | (p & 0xff00) | ((p >> 16) & 0xff); }
         }
     }
-    plat_present(rgba, w, h);
+    plat_present(rgba, w, h, PLAT_RGBA);
     last_present = plat_ticks_ms();
     dirty = 0;
 }

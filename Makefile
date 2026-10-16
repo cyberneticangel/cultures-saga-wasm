@@ -1,18 +1,31 @@
 # Cultures: static recompilation build.  One build per game executable ("variant").
 #
-#   make gen    [EXE=...]   regenerate C from the game executable (needs python + capstone + pefile)
-#   make web    [EXE=...]   WebAssembly build      -> web/cultures-<variant>.wasm (+ .json)
-#   make native [EXE=...]   SDL2 build for debugging -> build/native/<variant>/cultures
-#   make all-versions       gen + web for every game executable found in GAME_DIRS
+#   make gen    [VERSION=...]   regenerate C from the game executable (needs python + capstone + pefile)
+#   make web    [VERSION=...]   WebAssembly build      -> web/cultures-<variant>.wasm (+ .json)
+#   make native [VERSION=...]   SDL2 build for debugging -> build/native/<variant>/cultures
+#   make all-versions           gen + web for every game executable found
 #
-# EXE defaults to GameSaga.exe.  The variant name comes from the executable's content (its CRC-32,
-# see recomp/variant.py), not its file name: the original releases are all called Game.exe.
-# Known executables get gamesaga / game8thwonder / gamenorthland, others <name>-<crc>.
+# The executable is found in GAME_DIR and its subfolders, whatever it is called (Game.exe,
+# GameSaga.exe, ...): versions are recognised by content (CRC-32, see recomp/variant.py).
+# With one version there, it is used; with several, pick one with VERSION=saga / 8thwonder /
+# northland (or a variant name or CRC); `make gen` lists them.  EXE=/path/to/Game.exe overrides.
+# Known executables build as gamesaga / game8thwonder / gamenorthland, others as <name>-<crc>.
 GAME_DIR  ?= ..
 GAME_DIRS ?= $(GAME_DIR)
-EXE       ?= $(GAME_DIR)/GameSaga.exe
+VERSION   ?=
 PYTHON    ?= python3
 OPT       ?= -O2
+
+ifeq ($(origin EXE),undefined)
+EXE := $(shell python3 recomp/variant.py find "$(VERSION)" "$(GAME_DIR)" 2>/dev/null)
+endif
+ifeq ($(EXE),)
+ifneq ($(filter all gen web native,$(or $(MAKECMDGOALS),all)),)
+# show variant.py's explanation (the versions found, or what is missing), then stop
+$(shell python3 recomp/variant.py find "$(VERSION)" "$(GAME_DIR)" >/dev/null)
+$(error no game executable chosen)
+endif
+endif
 
 VARIANT  := $(shell python3 recomp/variant.py name "$(EXE)" 2>/dev/null || basename "$(EXE)" .exe | tr 'A-Z' 'a-z')
 GEN      := build/gen/$(VARIANT)

@@ -118,7 +118,7 @@ function fsop(body) {
 
 // ---------------------------------------------------------------- shared state with the page
 // ctl (Int32) slots:
-const C = { EVW: 0, EVR: 1, FSEQ: 2, FW: 3, FH: 4, AW: 5, AR: 6, ARATE: 7, WAKE: 8, EXIT: 9, MW: 10, MH: 11 };
+const C = { EVW: 0, EVR: 1, FSEQ: 2, FW: 3, FH: 4, AW: 5, AR: 6, ARATE: 7, WAKE: 8, EXIT: 9, MW: 10, MH: 11, FFMT: 12 };
 const EV_BASE = 64, EV_N = 256, FRAME_OFF = 8192, FRAME_MAX = 3440 * 1440 * 4;   // largest display mode (ddraw.c)
 const AUDIO_OFF = FRAME_OFF + FRAME_MAX, AUDIO_FRAMES = 1 << 15;
 // multiplayer: the page owns the WebSocket; incoming messages arrive in a byte ring ([u32 len][data]...)
@@ -144,12 +144,12 @@ const env = {
   js_log: (p, n) => { refresh(); log(dec1252.decode(u8.subarray(p, p + n))); },
   js_exit: code => { throw new Exit(code); },
   js_set_mode: (w, h) => { Atomics.store(ctl, C.MW, w); Atomics.store(ctl, C.MH, h); postMessage({ type: 'mode', w, h }); },
-  js_present: (p, w, h) => {
+  js_present: (p, w, h, fmt) => {   // fmt 0 = RGBA, 1 = RGB565 (converted by the page's WebGL shader)
     refresh();
-    const n = w * h * 4;
+    const n = w * h * (fmt === 1 ? 2 : 4);
     if (n > FRAME_MAX) return;
     frameBytes.set(u8.subarray(p, p + n));
-    ctl[C.FW] = w; ctl[C.FH] = h;
+    ctl[C.FW] = w; ctl[C.FH] = h; ctl[C.FFMT] = fmt;
     Atomics.add(ctl, C.FSEQ, 1);
   },
   js_poll_event: p => {
@@ -356,8 +356,8 @@ onmessage = async ev => {
   audio16 = new Int16Array(shared, AUDIO_OFF, AUDIO_FRAMES * 2);
   netRing = new Uint8Array(shared, NET_OFF, NET_SIZE);
   netUrl = msg.netUrl || '';
-  variant = msg.variant || 'gamesaga';
-  const exe = msg.exe || 'GameSaga.exe';
+  variant = msg.variant;
+  const exe = msg.exe;
   try {
     postMessage({ type: 'status', text: 'Indexing game files…' });
     loadIndex();

@@ -9,8 +9,9 @@ the game uses. Everything is compiled to WebAssembly.
 
 ## Play it
 
-Put this folder (`port/`) inside your Cultures – Die Saga installation, next to `GameSaga.exe`,
-build the game as described under [Build](#build), then:
+Put this folder (`port/`) inside your Cultures installation, next to the game's executable
+(`Game.exe`, or `GameSaga.exe` for Die Saga), build the game as described under [Build](#build),
+then:
 
 ```sh
 cd port
@@ -110,13 +111,12 @@ is already built (see [Build](#build)).
    `game-1a2b3c4d` means a different release or patch level than the one tested here; it can
    still be built, but may need fixes (see the end of this section).
 
-3. **Translate and compile each game.** Each takes about as long as the Saga build:
+3. **Translate and compile each game,** choosing it with `VERSION=`. Each takes about as long
+   as the Saga build:
 
    ```sh
-   make gen EXE="../8th Wonder of the World/Game.exe" PYTHON=.venv/bin/python
-   make web EXE="../8th Wonder of the World/Game.exe" -j$(nproc)
-   make gen EXE=../Northland/Game.exe PYTHON=.venv/bin/python
-   make web EXE=../Northland/Game.exe -j$(nproc)
+   make gen VERSION=8thwonder PYTHON=.venv/bin/python && make web VERSION=8thwonder -j$(nproc)
+   make gen VERSION=northland PYTHON=.venv/bin/python && make web VERSION=northland -j$(nproc)
    ```
 
    Or build everything found at once with `make all-versions PYTHON=.venv/bin/python -j$(nproc)`.
@@ -128,7 +128,7 @@ is already built (see [Build](#build)).
    **Start game**. Each game runs from its own folder and keeps its saves and settings in
    `port/userdata/<version>/`.
 
-5. **Native build (optional):** `make native EXE=../Northland/Game.exe -j$(nproc)`, then
+5. **Native build (optional):** `make native VERSION=northland -j$(nproc)`, then
    `./build/native/gamenorthland/cultures ../Northland`.
 
 ### Several installations
@@ -145,18 +145,19 @@ Installs elsewhere can be given with `--game` (repeatable):
 python3 serve.py --game /games/Cultures8thWonder --game /games/CulturesNorthland
 ```
 
-To build them, point `EXE` at each executable, or build everything at once:
+To build them, point `GAME_DIR` at each folder, or build everything at once:
 
 ```sh
-make gen EXE=/games/Cultures8thWonder/Game.exe PYTHON=.venv/bin/python && make web EXE=/games/Cultures8thWonder/Game.exe -j$(nproc)
+make gen GAME_DIR=/games/Cultures8thWonder PYTHON=.venv/bin/python && make web GAME_DIR=/games/Cultures8thWonder -j$(nproc)
 make all-versions GAME_DIRS="/games/Cultures8thWonder /games/CulturesNorthland" PYTHON=.venv/bin/python -j$(nproc)
 ```
 
 `all-versions` builds each version once, from the executables in `GAME_DIRS` (default: the folder
 above `port/`) and their subfolders. Subfolders may have spaces in their names; folders listed
-in `GAME_DIRS` may not (use `EXE=` for those). The music driver `gedx8musicdrv.dll` next to
-each executable is used for its build. `--version-dir VERSION=DIR` forces a version's folder if
-automatic matching isn't wanted. The native build takes the game folder as its argument:
+in `GAME_DIRS` may not (build those one at a time with `GAME_DIR=` or `EXE=`). The music driver
+`gedx8musicdrv.dll` next to each executable is used for its build. `serve.py --version-dir
+gamenorthland=/games/CulturesNorthland` (the build name, not the short `VERSION` name) forces a
+version's folder if automatic matching isn't wanted. The native build takes the game folder as its argument:
 `./build/native/gamenorthland/cultures ../Northland`.
 
 **Each executable reads the data formats of its own release.** Northland is older than the Saga
@@ -198,23 +199,38 @@ Tested on Linux with Python 3.14, zig 0.16 and binaryen (wasm-opt) 133.
    .venv/bin/pip install capstone pefile
    ```
 
-3. **Translate the game to C.** This reads `../GameSaga.exe` and `../gedx8musicdrv.dll` and writes
-   about 1 million lines of C to `build/gen/gamesaga/`. It takes about 30 seconds:
+3. **Translate the game to C.** This finds the game's executable in the folder above `port/` (or
+   its subfolders), whatever it is called, and writes about 1 million lines of C to
+   `build/gen/<version>/`, for example `build/gen/gamesaga/`. It takes about 30 seconds:
 
    ```sh
    make gen PYTHON=.venv/bin/python
    ```
 
-4. **Compile to WebAssembly.** This writes `web/cultures-gamesaga.wasm`. The first build takes a
+   If the folder holds more than one game version, `make gen` lists them and stops. Pick one
+   with `VERSION=`, and use the same `VERSION=` for the next step:
+
+   ```
+   $ make gen
+   Several game versions found; choose one with VERSION=...:
+     VERSION=saga        Cultures – Die Saga (2005)                 ../GameSaga.exe
+     VERSION=8thwonder   Cultures – 8th Wonder of the World (2003)  ../8th Wonder of the World/Game.exe
+     VERSION=northland   Cultures – Northland (2003)                ../Northland/Game.exe
+   or build them all with: make all-versions
+   $ make gen VERSION=saga PYTHON=.venv/bin/python
+   ```
+
+   `EXE=/path/to/Game.exe` names an executable directly, and `GAME_DIR=/path/to/game` searches
+   another folder.
+
+4. **Compile to WebAssembly.** This writes `web/cultures-<version>.wasm`. The first build takes a
    few minutes; later builds only recompile what changed:
 
    ```sh
-   make web -j$(nproc)
+   make web -j$(nproc)              # add the same VERSION=... as for make gen, if you used one
    ```
 
-   For another version, add `EXE=`, for example `make gen EXE=../Game8thwonder.exe PYTHON=.venv/bin/python`
-   followed by `make web EXE=../Game8thwonder.exe -j$(nproc)`. To build every version found in
-   the game folder at once: `make all-versions PYTHON=.venv/bin/python -j$(nproc)`.
+   To build every version found at once: `make all-versions PYTHON=.venv/bin/python -j$(nproc)`.
 
 5. **Run it:**
 
@@ -235,8 +251,9 @@ play with others, each player runs their own `serve.py` (see [Multiplayer](#mult
 Needs `clang` and SDL2 as well:
 
 ```sh
-make native -j$(nproc)                     # -> build/native/gamesaga/cultures (EXE=... for others)
-./build/native/gamesaga/cultures ..        # run from the game directory
+make native -j$(nproc)                     # -> build/native/<version>/cultures (VERSION=... as for make gen)
+./build/native/gamesaga/cultures ..        # run it with the game folder as argument
+./build/native/gamenorthland/cultures ../Northland
 ```
 
 The native build never writes to the game directory: saves and settings go to

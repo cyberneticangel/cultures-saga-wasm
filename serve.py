@@ -117,9 +117,10 @@ class Handler(SimpleHTTPRequestHandler):
 
     # ------------------------------------------------------------ verbs
     def select_overlay(self):
-        v = (self.query().get('v') or ['gamesaga'])[0].lower()
+        v = (self.query().get('v') or [''])[0].lower()
         if not re.fullmatch(r'[a-z0-9_-]{1,40}', v):
-            v = 'gamesaga'
+            # no version given: the first one found (the page always names one)
+            v = min((e['variant'] for _, e in self.folders.executables()), key=variant.order, default='gamesaga')
         self.overlay = os.path.join(self.overlay_root, v)
         self.game = self.game_dirs.get(v) or self.folders.owner(v)[0] or self.game_default
 

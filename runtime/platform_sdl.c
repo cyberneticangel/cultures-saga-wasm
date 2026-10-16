@@ -13,7 +13,7 @@
 static SDL_Window *win;
 static SDL_Renderer *ren;
 static SDL_Texture *tex;
-static int tex_w, tex_h;
+static int tex_w, tex_h, tex_fmt;
 static SDL_AudioDeviceID adev;
 static int headless;
 static int frame_dump;   /* dump every Nth presented frame to frames/NNNN.ppm */
@@ -46,7 +46,20 @@ void plat_set_mode(int w, int h) {
     SDL_RenderSetLogicalSize(ren, w, h);
 }
 
-void plat_present(const uint32_t *rgba, int w, int h) {
+static uint32_t *conv; static int conv_cap;
+
+void plat_present(const void *pixels, int w, int h, int fmt) {
+    const uint32_t *rgba = pixels;
+    if (fmt == PLAT_RGB565 && (getenv("CTL_FILE") || frame_dump)) {
+        /* screenshots and frame dumps want RGBA */
+        if (conv_cap < w * h) { free(conv); conv = malloc((size_t)w * h * 4); conv_cap = w * h; }
+        const uint16_t *src = pixels;
+        for (int i = 0; i < w * h; i++) {
+            uint32_t p = src[i], r = (p >> 11) & 31, g = (p >> 5) & 63, b = p & 31;
+            conv[i] = 0xff000000u | ((b << 3 | b >> 2) << 16) | ((g << 2 | g >> 4) << 8) | (r << 3 | r >> 2);
+        }
+        rgba = conv;
+    }
     if (getenv("CTL_FILE")) {
         if (last_w != w || last_h != h) { free(last_frame); last_frame = malloc((size_t)w * h * 4); last_w = w; last_h = h; }
         memcpy(last_frame, rgba, (size_t)w * h * 4);
@@ -63,12 +76,12 @@ void plat_present(const uint32_t *rgba, int w, int h) {
     }
     if (headless) return;
     if (!win) plat_set_mode(w, h);
-    if (!tex || tex_w != w || tex_h != h) {
+    if (!tex || tex_w != w || tex_h != h || tex_fmt != fmt) {
         if (tex) SDL_DestroyTexture(tex);
-        tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, w, h);
-        tex_w = w; tex_h = h;
+        tex = SDL_CreateTexture(ren, fmt == PLAT_RGB565 ? SDL_PIXELFORMAT_RGB565 : SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, w, h);
+        tex_w = w; tex_h = h; tex_fmt = fmt;
     }
-    SDL_UpdateTexture(tex, NULL, rgba, w * 4);
+    SDL_UpdateTexture(tex, NULL, pixels, w * (fmt == PLAT_RGB565 ? 2 : 4));
     SDL_RenderClear(ren);
     SDL_RenderCopy(ren, tex, NULL, NULL);
     SDL_RenderPresent(ren);

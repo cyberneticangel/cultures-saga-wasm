@@ -9,6 +9,9 @@ usage:
   variant.py json EXE        print the web/cultures-<variant>.json description
   variant.py scan DIR...     print every Cultures game executable in the folders and their subfolders
   variant.py scan-unique DIR...  the same, but one executable per variant
+  variant.py find VERSION DIR...  the one executable to build: VERSION is a short name (saga,
+                             8thwonder, northland), a variant or a CRC, or "" if only one version
+                             is in the folders; prints the choices and fails otherwise
 """
 import json, os, sys, zlib
 
@@ -18,6 +21,8 @@ KNOWN = {
     0x3f104927: ('game8thwonder', 'Cultures – 8th Wonder of the World (2003)'),
     0x8d7952ab: ('gamenorthland', 'Cultures – Northland (2003)'),
 }
+# short names for VERSION=
+SHORT = {'gamesaga': 'saga', 'game8thwonder': '8thwonder', 'gamenorthland': 'northland'}
 ENGINE_MARK = b'datax\\libs\\data%4.4d.lib'   # every executable of this engine opens its archives this way
 GAME_MARK = b'data\\maps\\demo_mainmenu'       # ...but only the games (not Editor.exe) load the menu's demo map
 
@@ -84,6 +89,36 @@ def scan_unique(dirs):
     return [p for _, p in best.values()]
 
 
+def find(version, dirs):
+    """(exe, None) for the executable VERSION names, or (None, message) explaining the choices"""
+    found = [(p, describe(p)) for p in scan_unique(dirs)]
+    v = version.strip().lower()
+    if v:
+        hit = [p for p, d in found if v in (d['variant'], d['crc'], SHORT.get(d['variant']))]
+        if hit: return hit[0], None
+        head = 'No game version "%s" in %s.' % (version, ', '.join(dirs))
+    elif len(found) == 1:
+        return found[0][0], None
+    elif len([p for p, d in found if d['variant'] in SHORT]) == 1:
+        # one known release plus unknown extras (the GOG installs ship a GameMp.exe next to Game.exe)
+        return [p for p, d in found if d['variant'] in SHORT][0], None
+    elif not found:
+        return None, ('No Cultures game executable found in %s or its subfolders.\n'
+                      'Point the build at one with EXE=/path/to/Game.exe or GAME_DIR=/path/to/game.' % ', '.join(dirs))
+    else:
+        head = 'Several game versions found; choose one with VERSION=...:'
+    found.sort(key=lambda x: order(x[1]['variant']))
+    names = [SHORT.get(d['variant'], d['variant']) for p, d in found]
+    w1, w2 = max(map(len, names)), max(len(d['title']) for p, d in found)
+    rows = ['  VERSION=%-*s  %-*s  %s' % (w1, n, w2, d['title'], os.path.relpath(p)) for n, (p, d) in zip(names, found)]
+    return None, '\n'.join([head] + rows + ['or build them all with: make all-versions'])
+
+
+def order(variant):
+    known = [v for v, _ in KNOWN.values()]
+    return (known.index(variant) if variant in known else len(known), variant)
+
+
 if __name__ == '__main__':
     cmd, args = sys.argv[1], sys.argv[2:]
     if cmd == 'name':
@@ -93,6 +128,10 @@ if __name__ == '__main__':
     elif cmd == 'scan':
         for p in scan(args):
             print(p)
+    elif cmd == 'find':
+        exe, msg = find(args[0], args[1:])
+        if not exe: sys.exit(msg)
+        print(exe)
     elif cmd == 'scan-unique':
         for p in scan_unique(args):
             print(p)

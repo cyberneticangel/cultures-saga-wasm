@@ -128,14 +128,14 @@
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
-const canvas = $('screen'), ctx = canvas.getContext('2d', { alpha: false });
+const canvas = $('screen');
 const logEl = $('log');
-const C = { EVW: 0, EVR: 1, FSEQ: 2, FW: 3, FH: 4, AW: 5, AR: 6, ARATE: 7, WAKE: 8, MW: 10, MH: 11 };
+const C = { EVW: 0, EVR: 1, FSEQ: 2, FW: 3, FH: 4, AW: 5, AR: 6, ARATE: 7, WAKE: 8, MW: 10, MH: 11, FFMT: 12 };
 const EV_BASE = 64, EV_N = 256, FRAME_OFF = 8192, FRAME_MAX = 3440 * 1440 * 4;   // largest display mode (ddraw.c)
 const AUDIO_OFF = FRAME_OFF + FRAME_MAX, AUDIO_FRAMES = 1 << 15;
 const NET_OFF = AUDIO_OFF + AUDIO_FRAMES * 4, NET_SIZE = 4 << 20, NET_W = 16, NET_R = 17, NET_ST = 18;
 const EV = { MOUSEMOVE: 1, MOUSEDOWN: 2, MOUSEUP: 3, KEYDOWN: 4, KEYUP: 5, CHAR: 6, QUIT: 7, WHEEL: 8 };
-let shared, ctl, frame, worker, lastSeq = 0, img = null, audioNode = null, running = false;
+let shared, ctl, frame, worker, lastSeq = 0, audioNode = null, running = false;
 let modeW = 800, modeH = 600;
 
 function status(t) { $('status').textContent = t; }
@@ -310,16 +310,67 @@ canvas.addEventListener('keyup', e => { const vk = vkOf(e.code); if (vk) push(EV
 canvas.addEventListener('blur', () => { for (const vk of [0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5]) push(EV.KEYUP, 0, 0, 0, vk); });
 
 // ---------------------------------------------------------------- display
+// Frames arrive as RGBA or, in the game's usual 16-bit mode, as RGB565. WebGL takes RGB565 as it is
+// and the GPU expands it, so neither the game thread nor this one converts pixels.
+// preserveDrawingBuffer keeps the last frame readable (screenshots via toDataURL).
+const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: true });
+const display = gl ? glDisplay(gl) : canvasDisplay(canvas.getContext('2d', { alpha: false }));
+
+function glDisplay(gl) {
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  const prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, `#version 300 es
+    void main() { vec2 p = vec2(gl_VertexID & 1, gl_VertexID >> 1) * 4.0 - 1.0; gl_Position = vec4(p, 0, 1); }`));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, `#version 300 es
+    precision mediump float; uniform sampler2D t; uniform int h; out vec4 o;
+    void main() { o = texelFetch(t, ivec2(int(gl_FragCoord.x), h - 1 - int(gl_FragCoord.y)), 0); }`));
+  gl.linkProgram(prog); gl.useProgram(prog);
+  const uH = gl.getUniformLocation(prog, 'h');
+  gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  let tw = 0, th = 0, tf = -1;
+  return (w, h, fmt) => {
+    const f565 = fmt === 1;
+    if (w !== tw || h !== th || fmt !== tf) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, f565 ? gl.RGB565 : gl.RGBA8, w, h, 0, f565 ? gl.RGB : gl.RGBA,
+                    f565 ? gl.UNSIGNED_SHORT_5_6_5 : gl.UNSIGNED_BYTE, null);
+      gl.viewport(0, 0, w, h); gl.uniform1i(uH, h);
+      tw = w; th = h; tf = fmt;
+    }
+    if (f565) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, w, h, gl.RGB, gl.UNSIGNED_SHORT_5_6_5, new Uint16Array(shared, FRAME_OFF, w * h));
+    else gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, frame, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  };
+}
+
+function canvasDisplay(ctx) {   // without WebGL 2: convert in JavaScript
+  let img = null, lut = null;
+  return (w, h, fmt) => {
+    if (!img || img.width !== w || img.height !== h) img = new ImageData(w, h);
+    if (fmt !== 1) { img.data.set(frame.subarray(0, w * h * 4)); ctx.putImageData(img, 0, 0); return; }
+    if (!lut) {
+      lut = new Uint32Array(65536);
+      for (let p = 0; p < 65536; p++) {
+        const r = p >> 11, g = (p >> 5) & 63, b = p & 31;
+        lut[p] = 0xff000000 | (b << 3 | b >> 2) << 16 | (g << 2 | g >> 4) << 8 | (r << 3 | r >> 2);
+      }
+    }
+    const src = new Uint16Array(shared, FRAME_OFF, w * h), dst = new Uint32Array(img.data.buffer);
+    for (let i = 0; i < w * h; i++) dst[i] = lut[src[i]];
+    ctx.putImageData(img, 0, 0);
+  };
+}
+
 function draw() {
   if (ctl) {
     const seq = Atomics.load(ctl, C.FSEQ);
     if (seq !== lastSeq) {
       lastSeq = seq;
       const w = ctl[C.FW], h = ctl[C.FH];
-      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; canvas.style.aspectRatio = w + ' / ' + h; img = null; }
-      if (!img) img = new ImageData(w, h);
-      img.data.set(frame.subarray(0, w * h * 4));
-      ctx.putImageData(img, 0, 0);
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; canvas.style.aspectRatio = w + ' / ' + h; }
+      display(w, h, ctl[C.FFMT]);
     }
   }
   requestAnimationFrame(draw);
@@ -415,7 +466,7 @@ async function start() {
     else if (m.type === 'error') { status('Crashed – see log'); logLine(m.text, 'err'); document.body.classList.add('showlog'); netClose(); }
   };
   const logLevel = +(new URLSearchParams(location.search).get('log') ?? 1);
-  const ver = versions.find(v => v.variant === variant()) || { variant: 'gamesaga', exe: 'GameSaga.exe' };
+  const ver = versions.find(v => v.variant === variant()) || versions.find(v => v.built && v.present);
   document.title = ver.title || TITLES[ver.variant] || 'Cultures';
   worker.postMessage({ type: 'start', shared, logLevel, netUrl: settings.net || defaultNetUrl(), variant: ver.variant, exe: ver.exe });
   canvas.focus();

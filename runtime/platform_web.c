@@ -10,7 +10,7 @@ IMPORT(js_sleep) void js_sleep(int ms);
 IMPORT(js_log) void js_log(const char *s, int len);
 IMPORT(js_exit) void js_exit(int code);
 IMPORT(js_set_mode) void js_set_mode(int w, int h);
-IMPORT(js_present) void js_present(const uint32_t *rgba, int w, int h);
+IMPORT(js_present) void js_present(const void *pixels, int w, int h, int fmt);
 IMPORT(js_poll_event) int js_poll_event(int *ev);
 IMPORT(js_open) int js_open(const char *path, int write, int create, int trunc);
 IMPORT(js_read) int js_read(int fd, void *buf, int n);
@@ -61,7 +61,7 @@ void plat_sleep(uint32_t ms) { js_sleep((int)ms); }
 void plat_log(const char *s) { js_log(s, (int)strlen(s)); }
 void plat_exit(int code) { js_exit(code); __builtin_trap(); }
 void plat_set_mode(int w, int h) { js_set_mode(w, h); }
-void plat_present(const uint32_t *rgba, int w, int h) { js_present(rgba, w, h); }
+void plat_present(const void *pixels, int w, int h, int fmt) { js_present(pixels, w, h, fmt); }
 int plat_poll_event(plat_event *ev) {
     int e[5];
     if (!js_poll_event(e)) return 0;

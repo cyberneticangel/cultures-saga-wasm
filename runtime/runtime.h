@@ -60,7 +60,10 @@ uint64_t plat_ticks_us(void);
 void plat_sleep(uint32_t ms);
 int  plat_poll_event(plat_event *ev);
 void plat_set_mode(int w, int h);
-void plat_present(const uint32_t *rgba, int w, int h);  /* 0xAABBGGRR little-endian RGBA bytes */
+enum { PLAT_RGBA, PLAT_RGB565 };
+/* pixels: w*h tightly packed, PLAT_RGBA = 0xAABBGGRR little-endian RGBA bytes, PLAT_RGB565 = 16-bit 5:6:5
+ * (the game's own format: the display converts it, which is cheaper than doing it here) */
+void plat_present(const void *pixels, int w, int h, int fmt);
 void plat_log(const char *s);
 void plat_set_cursor(const char *cur_path);   /* NULL = hidden, "" = default arrow */
 void plat_show_cursor(int show);
