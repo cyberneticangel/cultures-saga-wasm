@@ -8,6 +8,8 @@ SharedArrayBuffer, and exposes the game directory to the browser:
   GET  /fs/file?path=...      file contents (supports Range)
   PUT  /fs/file?path=...      replace file contents in the user overlay
   POST /fs/op                 {"op": "unlink"|"mkdir"|"rename", "path":..., "to":...}
+  GET  /saves/export          zip of the version's user overlay (saves and settings)
+  POST /saves/import          unpack such a zip into the overlay
   GET  /net                   WebSocket multiplayer relay (see relay.py)
 
 The original game files are never modified: everything the game writes goes to
@@ -15,7 +17,7 @@ the overlay directory (default: ./userdata).
 
 usage: python3 serve.py [--game DIR] [--userdata DIR] [--port 8000]
 """
-import argparse, glob, json, os, posixpath, re, shutil, sys, urllib.parse
+import argparse, glob, io, json, os, posixpath, re, shutil, sys, urllib.parse, zipfile
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 import relay
 
@@ -160,7 +162,49 @@ class Handler(SimpleHTTPRequestHandler):
             return self.fs_read()
         if url.path == '/net':
             return relay.RELAY.handle(self)
+        if url.path == '/saves/export':
+            return self.saves_export()
         return super().do_GET()
+
+    def saves_export(self):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+            for root, _, files in os.walk(self.overlay):
+                for name in files:
+                    path = os.path.join(root, name)
+                    rel = os.path.relpath(path, self.overlay).replace(os.sep, '/')
+                    if rel != '.deleted.json':
+                        z.write(path, rel)
+        v = os.path.basename(self.overlay)
+        self.reply(200, buf.getvalue(), 'application/zip',
+                   [('Content-Disposition', 'attachment; filename="cultures-%s-saves.zip"' % v)])
+
+    def saves_import(self):
+        n = int(self.headers.get('Content-Length', 0))
+        if n > 512 << 20:
+            return self.reply(413, b'zip too large', 'text/plain')
+        try:
+            z = zipfile.ZipFile(io.BytesIO(self.rfile.read(n)))
+            entries = [i for i in z.infolist() if not i.is_dir()]
+            if sum(i.file_size for i in entries) > 2 << 30:
+                raise ValueError('zip unpacks to more than 2 GB')
+            rels = []
+            for i in entries:
+                name = i.filename.replace('\\', '/')
+                if name.startswith('/') or '..' in name.split('/') or name == '.deleted.json':
+                    raise ValueError('bad path in zip: ' + i.filename)
+                rels.append((i, self.safe(name)))
+        except (zipfile.BadZipFile, ValueError) as e:
+            return self.reply(400, str(e).encode(), 'text/plain')
+        for i, rel in rels:
+            dst = os.path.join(self.overlay, rel)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            with open(dst, 'wb') as f:
+                f.write(z.read(i))
+        wo = self.whiteouts()
+        if wo & {rel for _, rel in rels}:
+            self.save_whiteouts(wo - {rel for _, rel in rels})
+        self.reply(200, json.dumps({'imported': len(rels)}).encode(), 'application/json')
 
     def fs_index(self):
         idx = {}
@@ -228,6 +272,8 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         url = urllib.parse.urlparse(self.path)
         self.select_overlay()
+        if url.path == '/saves/import':
+            return self.saves_import()
         if url.path != '/fs/op':
             return self.reply(404)
         req = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))) or b'{}')

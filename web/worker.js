@@ -118,7 +118,7 @@ function fsop(body) {
 
 // ---------------------------------------------------------------- shared state with the page
 // ctl (Int32) slots:
-const C = { EVW: 0, EVR: 1, FSEQ: 2, FW: 3, FH: 4, AW: 5, AR: 6, ARATE: 7, WAKE: 8, EXIT: 9, MW: 10, MH: 11, FFMT: 12 };
+const C = { EVW: 0, EVR: 1, FSEQ: 2, FW: 3, FH: 4, AW: 5, AR: 6, ARATE: 7, WAKE: 8, EXIT: 9, MW: 10, MH: 11, FFMT: 12, SPEED: 13 };
 const EV_BASE = 64, EV_N = 256, FRAME_OFF = 8192, FRAME_MAX = 3440 * 1440 * 4;   // largest display mode (ddraw.c)
 const AUDIO_OFF = FRAME_OFF + FRAME_MAX, AUDIO_FRAMES = 1 << 15;
 // multiplayer: the page owns the WebSocket; incoming messages arrive in a byte ring ([u32 len][data]...)
@@ -140,6 +140,7 @@ const t0 = performance.now();
 
 const env = {
   js_ticks_ms: () => performance.now() - t0,
+  js_game_speed: () => Atomics.load(ctl, C.SPEED),   // percent, set by the page (0 = paused)
   js_sleep: ms => { if (ms > 0) Atomics.wait(ctl, C.WAKE, Atomics.load(ctl, C.WAKE), ms); },
   js_log: (p, n) => { refresh(); log(dec1252.decode(u8.subarray(p, p + n))); },
   js_exit: code => { throw new Exit(code); },
@@ -368,7 +369,7 @@ onmessage = async ev => {
     u8 = new Uint8Array(mem.buffer);
     instance.exports._initialize();
     postMessage({ type: 'status', text: 'Running' });
-    instance.exports.game_main(msg.logLevel ?? 1);
+    instance.exports.game_main(msg.logLevel ?? 1, msg.skipIntro ? 1 : 0);
     postMessage({ type: 'exit', code: 0 });
   } catch (e) {
     for (const f of fds) if (f) flush(f);

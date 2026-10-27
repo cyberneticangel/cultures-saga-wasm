@@ -37,12 +37,25 @@ game:
   `Saves/opt_glob.ini` and applies at the next start. The in-game Grafik tab lists the same modes
   and switches immediately. The game's interface keeps its pixel size, so it gets small at the
   highest resolutions; 3440×1440 runs at about 45 fps in Firefox.
-- **Display:** smooth or sharp-pixel scaling.
+- **Interface size:** Normal, Large (1.5×) or Huge (2×). "Match this window" then picks a lower
+  resolution that the browser scales up, so the interface stays readable on large screens. With
+  **Match at every start** this happens each time the game starts.
+- **Display:** smooth or sharp-pixel scaling; **Skip intro video** goes straight to the menu (the
+  menu's Introsequenz still plays it); **Edge scrolling** keeps the map scrolling when the cursor leaves
+  the game past an edge.
+- **Saves:** export this version's saves and settings as a zip, or import such a zip (before
+  starting the game).
 - **Sound:** master volume, and an option to mute while the tab is in the background.
 - **Multiplayer server.**
 
 Everything else, such as scrolling, music and detail level, is in the game's own options window
 (the scroll icon in the sidebar).
+
+### While playing
+
+- **Game speed:** the selector in the header runs single-player games at ½× to 4×, and the
+  **Pause** key pauses and resumes. Multiplayer always runs at 1×.
+- **Screenshot:** the header button or **Print Screen** saves a PNG at the game's resolution.
 
 ### Multiplayer
 
@@ -180,7 +193,9 @@ anything in `recomp/` or `runtime/`.
 
 ### Building the browser version
 
-Tested on Linux with Python 3.14, zig 0.16 and binaryen (wasm-opt) 133.
+Tested on Linux with Python 3.14, zig 0.16 and binaryen (wasm-opt) 133. Development builds of zig
+0.18 no longer bundle the WASI C library (`'string.h' file not found`); use a zig 0.16 release, for
+example with `make web WASM_CC="/path/to/zig cc -target wasm32-wasi"`.
 
 1. **Install the tools.**
    - `python3` and `make`.

@@ -14,7 +14,18 @@ HLE(ADVAPI32, GetUserNameA) {
 }
 
 /* ---- WINMM ---- */
-HLE(WINMM, timeGetTime) { RET_STD(0, plat_ticks_ms()); }
+/* The game's only clock.  It runs at the speed the player picked (0 = paused), always at 1x
+ * while a multiplayer connection is open; the runtime's own timers use plat_ticks_ms(). */
+HLE(WINMM, timeGetTime) {
+    static uint32_t last;
+    static uint64_t vclock;   /* 1/100 ms */
+    uint32_t now = plat_ticks_ms();
+    int speed = plat_net_state() ? 100 : plat_game_speed();
+    if (!last) vclock = (uint64_t)now * 100;
+    else vclock += (uint64_t)(now - last) * (uint32_t)(speed < 0 ? 0 : speed > 1000 ? 1000 : speed);
+    last = now;
+    RET_STD(0, (uint32_t)(vclock / 100));
+}
 HLE(WINMM, mixerGetNumDevs) { RET_STD(0, 0); }
 HLE(WINMM, mixerOpen) { RET_STD(5, 2); }   /* MMSYSERR_BADDEVICEID */
 HLE(WINMM, mixerClose) { RET_STD(1, 0); }

@@ -7,6 +7,7 @@
 
 IMPORT(js_ticks_ms) double js_ticks_ms(void);
 IMPORT(js_sleep) void js_sleep(int ms);
+IMPORT(js_game_speed) int js_game_speed(void);
 IMPORT(js_log) void js_log(const char *s, int len);
 IMPORT(js_exit) void js_exit(int code);
 IMPORT(js_set_mode) void js_set_mode(int w, int h);
@@ -58,6 +59,7 @@ void plat_show_cursor(int show) {
 uint32_t plat_ticks_ms(void) { return (uint32_t)(uint64_t)js_ticks_ms(); }
 uint64_t plat_ticks_us(void) { return (uint64_t)(js_ticks_ms() * 1000.0); }
 void plat_sleep(uint32_t ms) { js_sleep((int)ms); }
+int plat_game_speed(void) { return js_game_speed(); }
 void plat_log(const char *s) { js_log(s, (int)strlen(s)); }
 void plat_exit(int code) { js_exit(code); __builtin_trap(); }
 void plat_set_mode(int w, int h) { js_set_mode(w, h); }
@@ -89,8 +91,10 @@ int plat_net_recv(void *b, int cap) { return js_net_recv(b, cap); }
 void plat_net_close(void) { js_net_close(); }
 
 void game_start(void);
-__attribute__((export_name("game_main"))) int game_main(int loglevel) {
+/* flags: bit 0 = skip the intro videos */
+__attribute__((export_name("game_main"))) int game_main(int loglevel, int flags) {
     log_level = loglevel;
+    skip_intro = flags & 1;
     {
         extern unsigned char __heap_base, __data_end, __global_base;
         int local;

@@ -29,6 +29,7 @@ void plat_init(void) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
 }
 uint32_t plat_ticks_ms(void) { return SDL_GetTicks(); }
+int plat_game_speed(void) { return getenv("SPEED") ? atoi(getenv("SPEED")) : 100; }
 uint64_t plat_ticks_us(void) { return SDL_GetPerformanceCounter() * 1000000ull / SDL_GetPerformanceFrequency(); }
 void plat_sleep(uint32_t ms) { SDL_Delay(ms); }
 void plat_log(const char *s) { fputs(s, stderr); }
@@ -494,6 +495,7 @@ void game_start(void);
 int main(int argc, char **argv) {
     if (argc > 1 && chdir(argv[1]) != 0) { perror("chdir"); return 1; }
     if (getenv("LOGLEVEL")) log_level = atoi(getenv("LOGLEVEL"));
+    skip_intro = getenv("SKIP_INTRO") != NULL;
     struct sigaction sa = {0};
     sa.sa_sigaction = on_segv; sa.sa_flags = SA_SIGINFO;
     sigaction(SIGSEGV, &sa, NULL);

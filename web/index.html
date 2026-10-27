@@ -21,6 +21,10 @@
   main { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; position: relative; }
   canvas { background: #000; max-width: 100%; max-height: 100%; aspect-ratio: 4 / 3; image-rendering: auto; cursor: none; outline: none; }
   canvas.pixelated { image-rendering: pixelated; }
+  canvas:fullscreen { object-fit: contain; }
+  #paused { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); padding: 4px 14px; border-radius: 6px;
+    background: rgba(0, 0, 0, .7); color: var(--ink); font-weight: 600; letter-spacing: .08em; pointer-events: none; }
+  header select { background: #0d0b08; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; font-size: 13px; }
   #start { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 16px; }
   #start p { color: var(--muted); max-width: 46ch; margin: 0; }
   #start .version { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; }
@@ -31,7 +35,7 @@
   body.showlog #log { display: block; }
   .err { color: #e07a5f; }
 
-  dialog { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 0; width: min(460px, calc(100vw - 32px)); }
+  dialog { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 0; width: min(460px, calc(100vw - 32px)); max-height: calc(100vh - 32px); }
   dialog::backdrop { background: rgba(0, 0, 0, .6); }
   dialog form { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
   dialog h2 { margin: 0; font-size: 17px; font-weight: 600; }
@@ -43,6 +47,10 @@
   dialog input[type=range] { flex: 1; accent-color: var(--accent); }
   dialog .hint { color: var(--muted); font-size: 12.5px; margin: 0; }
   dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+  dialog .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  dialog a.button { color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 5px 12px; font-size: 13px; text-decoration: none; }
+  dialog a.button:hover { border-color: var(--accent); }
+  dialog button:disabled { opacity: .5; cursor: default; border-color: var(--line); }
   dialog output { min-width: 3ch; text-align: right; font-variant-numeric: tabular-nums; }
 </style>
 </head>
@@ -50,12 +58,22 @@
 <header>
   <h1>Cultures – Die Saga</h1>
   <span class="status" id="status">Ready</span>
+  <select id="speed" hidden title="Game speed (the Pause key pauses and resumes)">
+    <option value="0">Paused</option>
+    <option value="50">½×</option>
+    <option value="100" selected>1×</option>
+    <option value="200">2×</option>
+    <option value="300">3×</option>
+    <option value="400">4×</option>
+  </select>
+  <button id="btn-shot" hidden title="Save a screenshot (Print Screen)">Screenshot</button>
   <button id="btn-settings" title="Display, sound and multiplayer settings">Settings</button>
   <button id="btn-fs" title="Fullscreen">Fullscreen</button>
   <button id="btn-log" title="Show engine log">Log</button>
 </header>
 <main>
   <canvas id="screen" width="800" height="600" tabindex="0"></canvas>
+  <div id="paused" hidden>PAUSED</div>
   <div id="start">
     <label class="version" id="version-row" hidden>Game version
       <select id="version"></select></label>
@@ -98,18 +116,39 @@
             <option value="3440x1440">3440 × 1440</option>
           </optgroup>
         </select></label>
-      <button type="button" id="set-res-fit">Match this window</button>
-      <p class="hint" id="res-hint">Takes effect the next time the game starts. You can also change it in the game's options (Grafik).</p>
+      <label><span>Interface size</span>
+        <select id="set-ui">
+          <option value="1">Normal</option>
+          <option value="1.5">Large (1.5×)</option>
+          <option value="2">Huge (2×)</option>
+        </select></label>
+      <div class="row"><button type="button" id="set-res-fit">Match this window</button></div>
+      <label><span>Match at every start</span><input type="checkbox" id="set-autofit"></label>
+      <p class="hint">The game's interface keeps its pixel size. A larger interface size picks a lower resolution
+        to suit this screen, which the browser scales up. <span id="res-hint">A new resolution takes effect the next time the game
+        starts. You can also change it in the game's options (Grafik).</span></p>
       <label><span>Scaling</span>
         <select id="set-scale">
           <option value="smooth">Smooth</option>
           <option value="sharp">Sharp pixels</option>
         </select></label>
+      <label><span>Skip intro video</span><input type="checkbox" id="set-skipintro"></label>
+      <label><span>Edge scrolling</span><input type="checkbox" id="set-edgescroll"></label>
+      <p class="hint">With edge scrolling on, the map keeps scrolling when the cursor leaves the game past an edge.</p>
     </fieldset>
     <fieldset>
       <legend>Sound</legend>
       <label><span>Master volume</span><input type="range" id="set-vol" min="0" max="100" step="1"><output id="vol-out"></output></label>
       <label><span>Mute in background</span><input type="checkbox" id="set-bgmute"></label>
+    </fieldset>
+    <fieldset>
+      <legend>Saves</legend>
+      <div class="row">
+        <a class="button" id="save-export" download>Export saves</a>
+        <button type="button" id="save-import">Import saves…</button>
+        <input type="file" id="save-file" accept=".zip,application/zip" hidden>
+      </div>
+      <p class="hint" id="save-hint">A zip of this game version's saves and settings, to back them up or move them to another computer.</p>
     </fieldset>
     <fieldset>
       <legend>Multiplayer</legend>
@@ -130,7 +169,7 @@
 const $ = id => document.getElementById(id);
 const canvas = $('screen');
 const logEl = $('log');
-const C = { EVW: 0, EVR: 1, FSEQ: 2, FW: 3, FH: 4, AW: 5, AR: 6, ARATE: 7, WAKE: 8, MW: 10, MH: 11, FFMT: 12 };
+const C = { EVW: 0, EVR: 1, FSEQ: 2, FW: 3, FH: 4, AW: 5, AR: 6, ARATE: 7, WAKE: 8, MW: 10, MH: 11, FFMT: 12, SPEED: 13 };
 const EV_BASE = 64, EV_N = 256, FRAME_OFF = 8192, FRAME_MAX = 3440 * 1440 * 4;   // largest display mode (ddraw.c)
 const AUDIO_OFF = FRAME_OFF + FRAME_MAX, AUDIO_FRAMES = 1 << 15;
 const NET_OFF = AUDIO_OFF + AUDIO_FRAMES * 4, NET_SIZE = 4 << 20, NET_W = 16, NET_R = 17, NET_ST = 18;
@@ -150,7 +189,8 @@ function logLine(t, cls) {
 }
 
 // ---------------------------------------------------------------- settings (per browser)
-const DEFAULTS = { version: 'gamesaga', scale: 'smooth', volume: 100, bgmute: false, net: '' };
+const DEFAULTS = { version: 'gamesaga', scale: 'smooth', volume: 100, bgmute: false, net: '',
+                   ui: 1, autofit: false, skipIntro: false, edgeScroll: true };
 function loadSettings() {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('cultures.settings') || '{}') }; }
   catch { return { ...DEFAULTS }; }
@@ -221,23 +261,46 @@ function openSettings() {
   resAtOpen = readResolution();
   $('set-res').value = resAtOpen;
   $('res-hint').hidden = !running;
+  $('set-ui').value = settings.ui;
+  $('set-autofit').checked = settings.autofit;
   $('set-scale').value = settings.scale;
+  $('set-skipintro').checked = settings.skipIntro;
+  $('set-edgescroll').checked = settings.edgeScroll;
+  $('save-export').href = '/saves/export?v=' + encodeURIComponent(variant());
+  $('save-import').disabled = running;
+  $('save-import').title = running ? 'Reload the page to import saves: the running game has already read its files' : '';
   $('set-vol').value = settings.volume; $('vol-out').value = settings.volume;
   $('set-bgmute').checked = settings.bgmute;
   $('set-net').value = settings.net;
   $('set-net').placeholder = defaultNetUrl();
   $('settings').showModal();
 }
-$('set-res-fit').addEventListener('click', () => {
-  const ratio = window.innerWidth / window.innerHeight, maxW = screen.width * devicePixelRatio;
-  let best = null, bestScore = Infinity;
+// The mode closest to this window's shape, no larger than the screen divided by the interface size.
+function fitResolution(ui) {
+  const ratio = window.innerWidth / window.innerHeight;
+  const maxW = screen.width * devicePixelRatio / ui, maxH = screen.height * devicePixelRatio / ui;
+  let best = '800x600', bestScore = Infinity;
   for (const o of $('set-res').options) {
     const [w, h] = o.value.split('x').map(Number);
-    if (w > Math.max(maxW, 800)) continue;
+    if (w > maxW * 1.02 || h > maxH * 1.02) continue;
     const score = Math.abs(Math.log((w / h) / ratio)) * 10 - w / 10000;   /* aspect first, then size */
     if (score < bestScore) { bestScore = score; best = o.value; }
   }
-  if (best) $('set-res').value = best;
+  return best;
+}
+$('set-res-fit').addEventListener('click', () => { $('set-res').value = fitResolution(+$('set-ui').value); });
+$('set-ui').addEventListener('change', () => { if (+$('set-ui').value > 1) $('set-scale').value = 'sharp'; });
+
+// ---------------------------------------------------------------- saves (zip of userdata/<version>/ via serve.py)
+$('save-import').addEventListener('click', () => $('save-file').click());
+$('save-file').addEventListener('change', async () => {
+  const f = $('save-file').files[0];
+  $('save-file').value = '';
+  if (!f || !confirm(`Import the saves in ${f.name}? Files with the same names are replaced.`)) return;
+  try {
+    const r = await fetch('/saves/import?v=' + encodeURIComponent(variant()), { method: 'POST', body: f });
+    $('save-hint').textContent = r.ok ? (await r.json()).imported + ' files imported.' : 'Import failed: ' + await r.text();
+  } catch (e) { $('save-hint').textContent = 'Import failed: ' + e; }
 });
 $('set-vol').addEventListener('input', e => { $('vol-out').value = e.target.value; });
 $('settings').addEventListener('close', () => {
@@ -246,6 +309,8 @@ $('settings').addEventListener('close', () => {
     version: settings.version,
     scale: $('set-scale').value, volume: +$('set-vol').value, bgmute: $('set-bgmute').checked,
     net: $('set-net').value.trim(),
+    ui: +$('set-ui').value, autofit: $('set-autofit').checked,
+    skipIntro: $('set-skipintro').checked, edgeScroll: $('set-edgescroll').checked,
   };
   saveSettings(settings);
   applySettings();
@@ -267,16 +332,24 @@ function push(type, x = 0, y = 0, button = 0, key = 0) {
 }
 
 // ---------------------------------------------------------------- input
+// In fullscreen the canvas fills the screen and its picture is letterboxed (object-fit: contain),
+// so map through the picture's rectangle, not the element's.
 function gamePos(e) {
   const r = canvas.getBoundingClientRect();
-  const x = Math.floor((e.clientX - r.left) * modeW / r.width);
-  const y = Math.floor((e.clientY - r.top) * modeH / r.height);
+  const s = Math.min(r.width / canvas.width, r.height / canvas.height);
+  const pw = canvas.width * s, ph = canvas.height * s;
+  const x = Math.floor((e.clientX - r.left - (r.width - pw) / 2) * modeW / pw);
+  const y = Math.floor((e.clientY - r.top - (r.height - ph) / 2) * modeH / ph);
   return [Math.max(0, Math.min(modeW - 1, x)), Math.max(0, Math.min(modeH - 1, y))];
 }
 const btn = b => b === 0 ? 0 : b === 2 ? 1 : 2;
+let dragging = false;
 canvas.addEventListener('mousemove', e => push(EV.MOUSEMOVE, ...gamePos(e)));
-canvas.addEventListener('mousedown', e => { canvas.focus(); push(EV.MOUSEDOWN, ...gamePos(e), btn(e.button)); e.preventDefault(); });
-window.addEventListener('mouseup', e => { if (ctl) push(EV.MOUSEUP, ...gamePos(e), btn(e.button)); });
+canvas.addEventListener('mousedown', e => { canvas.focus(); dragging = true; push(EV.MOUSEDOWN, ...gamePos(e), btn(e.button)); e.preventDefault(); });
+window.addEventListener('mouseup', e => { dragging = false; if (ctl) push(EV.MOUSEUP, ...gamePos(e), btn(e.button)); });
+// outside the canvas: keep a drag going, and leave the cursor at the edge it crossed so the map scrolls
+window.addEventListener('mousemove', e => { if (dragging && e.target !== canvas) push(EV.MOUSEMOVE, ...gamePos(e)); });
+canvas.addEventListener('mouseleave', e => { if (settings.edgeScroll && !dragging) push(EV.MOUSEMOVE, ...gamePos(e)); });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('wheel', e => { push(EV.WHEEL, 0, e.deltaY < 0 ? 1 : -1); e.preventDefault(); }, { passive: false });
 
@@ -299,6 +372,7 @@ function vkOf(code) {
 }
 const enc1252 = ch => { const c = ch.charCodeAt(0); return c < 256 ? c : ({ '€': 0x80 })[ch] || 0; };
 canvas.addEventListener('keydown', e => {
+  if (e.code === 'Pause') { if (!e.repeat) togglePause(); e.preventDefault(); return; }
   const vk = vkOf(e.code);
   if (vk) push(EV.KEYDOWN, 0, 0, 0, vk);
   if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) { const c = enc1252(e.key); if (c) push(EV.CHAR, 0, 0, 0, c); }
@@ -306,7 +380,43 @@ canvas.addEventListener('keydown', e => {
   else if (e.key === 'Enter') push(EV.CHAR, 0, 0, 0, 13);
   if (!(e.ctrlKey && e.shiftKey) && e.key !== 'F11' && e.key !== 'F12') e.preventDefault();
 });
-canvas.addEventListener('keyup', e => { const vk = vkOf(e.code); if (vk) push(EV.KEYUP, 0, 0, 0, vk); e.preventDefault(); });
+canvas.addEventListener('keyup', e => {
+  if (e.code === 'Pause') return;
+  const vk = vkOf(e.code); if (vk) push(EV.KEYUP, 0, 0, 0, vk); e.preventDefault();
+});
+// Print Screen only reliably reaches the page as keyup
+window.addEventListener('keyup', e => { if (e.code === 'PrintScreen' && running) screenshot(); });
+
+// ---------------------------------------------------------------- game speed (single player; the runtime scales timeGetTime)
+let speed = 100, lastSpeed = 100, netLocked = false;
+function setSpeed(v) {
+  if (netLocked) v = 100;
+  speed = v;
+  if (v) lastSpeed = v;
+  if (ctl) Atomics.store(ctl, C.SPEED, v);
+  $('speed').value = v;
+  $('paused').hidden = v !== 0;
+}
+function togglePause() { setSpeed(speed ? 0 : lastSpeed); }
+function lockSpeed(locked) {
+  netLocked = locked;
+  $('speed').disabled = locked;
+  $('speed').title = locked ? 'Multiplayer runs at normal speed' : 'Game speed (the Pause key pauses and resumes)';
+  if (locked) { lastSpeed = 100; setSpeed(100); }
+}
+$('speed').addEventListener('change', () => { setSpeed(+$('speed').value); canvas.focus(); });
+
+// ---------------------------------------------------------------- screenshots (the canvas holds the frame at game resolution)
+function screenshot() {
+  const t = new Date(), p = n => String(n).padStart(2, '0');
+  const name = `cultures-${variant()}-${t.getFullYear()}${p(t.getMonth() + 1)}${p(t.getDate())}-${p(t.getHours())}${p(t.getMinutes())}${p(t.getSeconds())}.png`;
+  canvas.toBlob(b => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b); a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }, 'image/png');
+}
+$('btn-shot').onclick = () => { screenshot(); canvas.focus(); };
 canvas.addEventListener('blur', () => { for (const vk of [0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5]) push(EV.KEYUP, 0, 0, 0, vk); });
 
 // ---------------------------------------------------------------- display
@@ -412,6 +522,7 @@ function netFlush() {
 }
 function netOpen(url) {
   netClose();
+  lockSpeed(true);
   netQueue = [];
   logLine('multiplayer: connecting to ' + url);
   try { ws = new WebSocket(url); } catch (e) { logLine('multiplayer: ' + e, 'err'); netSetState(3); return; }
@@ -435,10 +546,16 @@ async function start() {
   }
   running = true;
   $('start').style.display = 'none';
+  if (settings.autofit) {
+    const res = fitResolution(settings.ui);
+    if (res !== readResolution()) { writeResolution(res); logLine('resolution: ' + res + ' (matched to this window)'); }
+  }
   shared = new SharedArrayBuffer(NET_OFF + NET_SIZE);
   ctl = new Int32Array(shared, 0, 2048);
   frame = new Uint8Array(shared, FRAME_OFF, FRAME_MAX);
   netRing = new Uint8Array(shared, NET_OFF, NET_SIZE);
+  setSpeed(100);
+  $('speed').hidden = $('btn-shot').hidden = false;
 
   try {
     const ac = new AudioContext({ sampleRate: 44100 });
@@ -461,14 +578,14 @@ async function start() {
     else if (m.type === 'cursor') setCursor(m);
     else if (m.type === 'net-open') netOpen(m.url);
     else if (m.type === 'net-send') { if (ws && ws.readyState === 1) ws.send(m.data); }
-    else if (m.type === 'net-close') netClose();
+    else if (m.type === 'net-close') { netClose(); lockSpeed(false); }
     else if (m.type === 'exit') { status('Game exited (' + m.code + ')'); logLine('exit ' + m.code); netClose(); }
     else if (m.type === 'error') { status('Crashed – see log'); logLine(m.text, 'err'); document.body.classList.add('showlog'); netClose(); }
   };
   const logLevel = +(new URLSearchParams(location.search).get('log') ?? 1);
   const ver = versions.find(v => v.variant === variant()) || versions.find(v => v.built && v.present);
   document.title = ver.title || TITLES[ver.variant] || 'Cultures';
-  worker.postMessage({ type: 'start', shared, logLevel, netUrl: settings.net || defaultNetUrl(), variant: ver.variant, exe: ver.exe });
+  worker.postMessage({ type: 'start', shared, logLevel, netUrl: settings.net || defaultNetUrl(), variant: ver.variant, exe: ver.exe, skipIntro: settings.skipIntro });
   canvas.focus();
   requestAnimationFrame(draw);
 }

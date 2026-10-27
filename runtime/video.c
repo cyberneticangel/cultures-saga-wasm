@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <strings.h>
 
 #define PLM_NO_STDIO
 #define PL_MPEG_IMPLEMENTATION
@@ -29,6 +30,7 @@
 
 uint32_t ddraw_make_surface(int w, int h, uint32_t *pixels, int *pitch, int *bpp);
 uint8_t *vfs_read_all(const char *winpath, uint32_t *len);
+int skip_intro;
 
 static const uint8_t CLSID_AMMultiMediaStream[16] = {0xe5,0x7c,0xc4,0x49,0xa4,0x9b,0xd0,0x11,0x82,0x12,0x00,0xc0,0x4f,0xc3,0x2c,0x45};
 static const uint8_t CLSID_FilterGraph[16] = {0xb3,0xeb,0x36,0xe4,0x4f,0x52,0xce,0x11,0x9f,0x53,0x00,0x20,0xaf,0x0b,0xa7,0x70};
@@ -180,6 +182,13 @@ static void amms_OpenFile(void) {
     plm_set_audio_enabled(V.plm, V.want_audio && V.arate);
     plm_set_loop(V.plm, 0);
     LOG("video: %s %dx%d %.2f fps, %.1f s, audio %d Hz\n", path, V.w, V.h, plm_get_framerate(V.plm), plm_get_duration(V.plm), V.arate);
+    /* the start-up video is FMV\<lang>\intro.mpg in every version.  Only its first showing is skipped,
+     * so the menu's "Introsequenz" still plays it; skipping ends the stream at once, the same path as a
+     * video that has played out */
+    static int intro_seen;
+    const char *base = path;
+    for (const char *c = path; *c; c++) if (*c == '\\' || *c == '/') base = c + 1;
+    if (strcasecmp(base, "intro.mpg") == 0 && !intro_seen++ && skip_intro) { LOG("video: skipped\n"); V.ended = 1; }
     RET_STD(3, S_OK);
 }
 static void amms_OpenMoniker(void) { RET_STD(4, E_FAIL); }

@@ -58,6 +58,8 @@ void plat_init(void);
 uint32_t plat_ticks_ms(void);
 uint64_t plat_ticks_us(void);
 void plat_sleep(uint32_t ms);
+int  plat_game_speed(void);   /* percent the game clock (timeGetTime) runs at: 100 normal, 0 paused */
+extern int skip_intro;        /* skip the start-up videos (video.c) */
 int  plat_poll_event(plat_event *ev);
 void plat_set_mode(int w, int h);
 enum { PLAT_RGBA, PLAT_RGB565 };
