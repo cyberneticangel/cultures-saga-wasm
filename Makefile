@@ -30,7 +30,7 @@ endif
 VARIANT  := $(shell python3 recomp/variant.py name "$(EXE)" 2>/dev/null || basename "$(EXE)" .exe | tr 'A-Z' 'a-z')
 GEN      := build/gen/$(VARIANT)
 GEN_SRC  := $(wildcard $(GEN)/code_*.c) $(GEN)/table.c
-RT_SRC   := cpu.c mem.c loader.c vfs.c kernel32.c user32.c misc.c ddraw.c dsound.c dinput.c main.c dmusic.c dmsynth.c cursor.c dplay.c video.c
+RT_SRC   := cpu.c mem.c loader.c vfs.c kernel32.c user32.c misc.c ddraw.c dsound.c dinput.c main.c dmusic.c dmsynth.c cursor.c dplay.c video.c qol.c
 RT_HDR   := runtime/recomp.h runtime/runtime.h runtime/dmusic_int.h $(GEN)/funcs.h
 CFLAGS_COMMON := -std=gnu11 -Iruntime -I$(GEN) -fno-strict-aliasing -fwrapv \
                  -Wno-parentheses-equality -Wno-unused-variable -Wno-unused-label -Wno-unused-but-set-variable

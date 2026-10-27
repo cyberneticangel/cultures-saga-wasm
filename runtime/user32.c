@@ -209,6 +209,7 @@ static int peek(uint32_t m, uint32_t lo, uint32_t hi, int remove) {
     return 0;
 }
 HLE(USER32, PeekMessageA) {
+    qol_frame();
     uint32_t m = ARG(0), lo = ARG(2), hi = ARG(3), rm = ARG(4);
     ddraw_present_if_dirty();
     input_pump();

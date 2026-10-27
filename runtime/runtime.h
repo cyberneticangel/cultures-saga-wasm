@@ -60,6 +60,15 @@ uint64_t plat_ticks_us(void);
 void plat_sleep(uint32_t ms);
 int  plat_game_speed(void);   /* percent the game clock (timeGetTime) runs at: 100 normal, 0 paused */
 extern int skip_intro;        /* skip the start-up videos (video.c) */
+/* settings and requests from the page for qol.c (web: slots in the shared control block) */
+enum { QOL_AUTOSAVE,      /* default autosave interval in seconds, 0 = leave it to the game */
+       QOL_SPEED_REQ,     /* game speed to set (12 = normal, 0 = pause), -1 = none */
+       QOL_QUICKLOAD,     /* 1 = load the quicksave */
+       QOL_SPEED_NOW,     /* reported: the game's current speed, -1 = unknown */
+       QOL_N };
+int  plat_qol_get(int slot);
+void plat_qol_set(int slot, int v);
+void qol_frame(void);         /* qol.c: called from the message pump, between frames */
 int  plat_poll_event(plat_event *ev);
 void plat_set_mode(int w, int h);
 enum { PLAT_RGBA, PLAT_RGB565 };

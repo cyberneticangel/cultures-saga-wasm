@@ -8,6 +8,8 @@
 IMPORT(js_ticks_ms) double js_ticks_ms(void);
 IMPORT(js_sleep) void js_sleep(int ms);
 IMPORT(js_game_speed) int js_game_speed(void);
+IMPORT(js_qol_get) int js_qol_get(int slot);
+IMPORT(js_qol_set) void js_qol_set(int slot, int v);
 IMPORT(js_log) void js_log(const char *s, int len);
 IMPORT(js_exit) void js_exit(int code);
 IMPORT(js_set_mode) void js_set_mode(int w, int h);
@@ -60,6 +62,8 @@ uint32_t plat_ticks_ms(void) { return (uint32_t)(uint64_t)js_ticks_ms(); }
 uint64_t plat_ticks_us(void) { return (uint64_t)(js_ticks_ms() * 1000.0); }
 void plat_sleep(uint32_t ms) { js_sleep((int)ms); }
 int plat_game_speed(void) { return js_game_speed(); }
+int plat_qol_get(int slot) { return js_qol_get(slot); }
+void plat_qol_set(int slot, int v) { js_qol_set(slot, v); }
 void plat_log(const char *s) { js_log(s, (int)strlen(s)); }
 void plat_exit(int code) { js_exit(code); __builtin_trap(); }
 void plat_set_mode(int w, int h) { js_set_mode(w, h); }

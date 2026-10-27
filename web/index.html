@@ -51,6 +51,10 @@
   dialog a.button { color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 5px 12px; font-size: 13px; text-decoration: none; }
   dialog a.button:hover { border-color: var(--accent); }
   dialog button:disabled { opacity: .5; cursor: default; border-color: var(--line); }
+  dialog dl.keys { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; margin: 0; font-size: 14px; }
+  dialog dl.keys dt { color: var(--ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  dialog dl.keys dd { margin: 0; color: var(--muted); }
+  dialog#keys { width: min(560px, calc(100vw - 32px)); }
   dialog output { min-width: 3ch; text-align: right; font-variant-numeric: tabular-nums; }
 </style>
 </head>
@@ -58,15 +62,9 @@
 <header>
   <h1>Cultures – Die Saga</h1>
   <span class="status" id="status">Ready</span>
-  <select id="speed" hidden title="Game speed (the Pause key pauses and resumes)">
-    <option value="0">Paused</option>
-    <option value="50">½×</option>
-    <option value="100" selected>1×</option>
-    <option value="200">2×</option>
-    <option value="300">3×</option>
-    <option value="400">4×</option>
-  </select>
+  <select id="speed" hidden title="Game speed (the Pause key pauses and resumes)"></select>
   <button id="btn-shot" hidden title="Save a screenshot (Print Screen)">Screenshot</button>
+  <button id="btn-keys" title="The game's keyboard shortcuts">Keys</button>
   <button id="btn-settings" title="Display, sound and multiplayer settings">Settings</button>
   <button id="btn-fs" title="Fullscreen">Fullscreen</button>
   <button id="btn-log" title="Show engine log">Log</button>
@@ -85,6 +83,68 @@
   </div>
 </main>
 <pre id="log"></pre>
+
+<dialog id="keys">
+  <form method="dialog">
+    <h2>Keys</h2>
+    <p class="hint">From the game's own help (F1 in game; Die Saga, the older games may differ a little). Lower and upper case letters are different keys.</p>
+    <fieldset>
+      <legend>This browser version</legend>
+      <dl class="keys">
+        <dt>Pause</dt><dd>Pause and resume</dd>
+        <dt>Shift F9</dt><dd>Load the quicksave</dd>
+        <dt>Print Screen</dt><dd>Save a screenshot (PNG)</dd>
+      </dl>
+    </fieldset>
+    <fieldset>
+      <legend>Game</legend>
+      <dl class="keys">
+        <dt>p</dt><dd>Pause</dd>
+        <dt>l</dt><dd>Faster (1×, 2×, 3×)</dd>
+        <dt>F9, Ctrl s</dt><dd>Quicksave</dd>
+        <dt>F1 / F2</dt><dd>Help / options</dd>
+        <dt>F3 / F4</dt><dd>Load / save</dd>
+        <dt>F5 – F8</dt><dd>Diplomacy, statistics, list of people, technology tree</dd>
+        <dt>F10</dt><dd>Overview map</dd>
+        <dt>Ctrl b</dt><dd>Screenshot (the game's own)</dd>
+        <dt>Esc</dt><dd>Close window, deselect</dd>
+        <dt>Tab</dt><dd>Show the tooltips of all people and houses</dd>
+        <dt>Arrows, number pad</dt><dd>Scroll</dd>
+        <dt>h</dt><dd>Jump to the headquarters</dd>
+        <dt>z</dt><dd>Zoom in and out</dd>
+        <dt>o</dt><dd>Observation window</dd>
+        <dt>A / e / B</dt><dd>Assistant / extras / letters window</dd>
+        <dt>v / V</dt><dd>Global defence mode on / off</dd>
+        <dt>Return</dt><dd>Chat (multiplayer)</dd>
+      </dl>
+    </fieldset>
+    <fieldset>
+      <legend>Selecting</legend>
+      <dl class="keys">
+        <dt>. / ,</dt><dd>Next civilian / next scout</dd>
+        <dt>f</dt><dd>Select all heroes</dd>
+        <dt>x / y</dt><dd>Deselect all non-heroes / non-soldiers</dd>
+        <dt>0 – 9</dt><dd>Select group</dd>
+        <dt>Ctrl 0 – 9</dt><dd>Make the selection group N</dd>
+        <dt>Shift 0 – 9</dt><dd>Add the selection to group N</dd>
+        <dt>Shift / Ctrl click</dt><dd>Add to / remove from the selection</dd>
+        <dt>Space</dt><dd>Action menu for the selection</dd>
+      </dl>
+    </fieldset>
+    <fieldset>
+      <legend>Building and orders</legend>
+      <dl class="keys">
+        <dt>b / s</dt><dd>Build a house / road</dd>
+        <dt>d / D</dt><dd>Build a palisade / a gate in it</dd>
+        <dt>c</dt><dd>Change job (one person selected)</dd>
+        <dt>w / a</dt><dd>Assign home / workplace</dd>
+        <dt>Ctrl right-click</dt><dd>Set the work area (outdoor workers)</dd>
+        <dt>Ctrl click on ±</dt><dd>Request a good without limit (person window); ±10 goods (storehouse)</dd>
+      </dl>
+    </fieldset>
+    <div class="buttons"><button class="primary" value="ok">Close</button></div>
+  </form>
+</dialog>
 
 <dialog id="settings">
   <form method="dialog">
@@ -143,6 +203,16 @@
     </fieldset>
     <fieldset>
       <legend>Saves</legend>
+      <label><span>Autosave</span>
+        <select id="set-autosave">
+          <option value="0">As set in the game</option>
+          <option value="5">Every 5 minutes</option>
+          <option value="10">Every 10 minutes</option>
+          <option value="15">Every 15 minutes</option>
+          <option value="30">Every 30 minutes</option>
+        </select></label>
+      <p class="hint">The game's own autosave (Options → Speichern) is off each time it starts. With an interval
+        here it is switched on for every game, into the game's ten autosave slots.</p>
       <div class="row">
         <a class="button" id="save-export" download>Export saves</a>
         <button type="button" id="save-import">Import saves…</button>
@@ -169,7 +239,8 @@
 const $ = id => document.getElementById(id);
 const canvas = $('screen');
 const logEl = $('log');
-const C = { EVW: 0, EVR: 1, FSEQ: 2, FW: 3, FH: 4, AW: 5, AR: 6, ARATE: 7, WAKE: 8, MW: 10, MH: 11, FFMT: 12, SPEED: 13 };
+const C = { EVW: 0, EVR: 1, FSEQ: 2, FW: 3, FH: 4, AW: 5, AR: 6, ARATE: 7, WAKE: 8, MW: 10, MH: 11, FFMT: 12, SPEED: 13, QOL: 20 };
+const Q = { AUTOSAVE: 0, SPEED_REQ: 1, QUICKLOAD: 2, SPEED_NOW: 3 };   // qol.c slots (QOL_* in runtime.h)
 const EV_BASE = 64, EV_N = 256, FRAME_OFF = 8192, FRAME_MAX = 3440 * 1440 * 4;   // largest display mode (ddraw.c)
 const AUDIO_OFF = FRAME_OFF + FRAME_MAX, AUDIO_FRAMES = 1 << 15;
 const NET_OFF = AUDIO_OFF + AUDIO_FRAMES * 4, NET_SIZE = 4 << 20, NET_W = 16, NET_R = 17, NET_ST = 18;
@@ -190,7 +261,7 @@ function logLine(t, cls) {
 
 // ---------------------------------------------------------------- settings (per browser)
 const DEFAULTS = { version: 'gamesaga', scale: 'smooth', volume: 100, bgmute: false, net: '',
-                   ui: 1, autofit: false, skipIntro: false, edgeScroll: true };
+                   ui: 1, autofit: false, skipIntro: false, edgeScroll: true, autosave: 0 };
 function loadSettings() {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('cultures.settings') || '{}') }; }
   catch { return { ...DEFAULTS }; }
@@ -266,6 +337,7 @@ function openSettings() {
   $('set-scale').value = settings.scale;
   $('set-skipintro').checked = settings.skipIntro;
   $('set-edgescroll').checked = settings.edgeScroll;
+  $('set-autosave').value = settings.autosave;
   $('save-export').href = '/saves/export?v=' + encodeURIComponent(variant());
   $('save-import').disabled = running;
   $('save-import').title = running ? 'Reload the page to import saves: the running game has already read its files' : '';
@@ -311,13 +383,17 @@ $('settings').addEventListener('close', () => {
     net: $('set-net').value.trim(),
     ui: +$('set-ui').value, autofit: $('set-autofit').checked,
     skipIntro: $('set-skipintro').checked, edgeScroll: $('set-edgescroll').checked,
+    autosave: +$('set-autosave').value,
   };
   saveSettings(settings);
   applySettings();
+  if (ctl) qolSet(Q.AUTOSAVE, settings.autosave * 60);
   if ($('set-res').value !== resAtOpen) writeResolution($('set-res').value);
   if (!running) canvas.focus();
 });
 $('btn-settings').onclick = openSettings;
+$('btn-keys').onclick = () => $('keys').showModal();
+$('keys').addEventListener('close', () => { if (running) canvas.focus(); });
 $('btn-settings2').onclick = openSettings;
 
 function push(type, x = 0, y = 0, button = 0, key = 0) {
@@ -373,6 +449,7 @@ function vkOf(code) {
 const enc1252 = ch => { const c = ch.charCodeAt(0); return c < 256 ? c : ({ '€': 0x80 })[ch] || 0; };
 canvas.addEventListener('keydown', e => {
   if (e.code === 'Pause') { if (!e.repeat) togglePause(); e.preventDefault(); return; }
+  if (e.code === 'F9' && e.shiftKey) { if (!e.repeat) quickload(); e.preventDefault(); return; }
   const vk = vkOf(e.code);
   if (vk) push(EV.KEYDOWN, 0, 0, 0, vk);
   if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) { const c = enc1252(e.key); if (c) push(EV.CHAR, 0, 0, 0, c); }
@@ -381,15 +458,29 @@ canvas.addEventListener('keydown', e => {
   if (!(e.ctrlKey && e.shiftKey) && e.key !== 'F11' && e.key !== 'F12') e.preventDefault();
 });
 canvas.addEventListener('keyup', e => {
-  if (e.code === 'Pause') return;
+  if (e.code === 'Pause' || e.code === 'F9' && e.shiftKey) return;
   const vk = vkOf(e.code); if (vk) push(EV.KEYUP, 0, 0, 0, vk); e.preventDefault();
 });
 // Print Screen only reliably reaches the page as keyup
 window.addEventListener('keyup', e => { if (e.code === 'PrintScreen' && running) screenshot(); });
 
-// ---------------------------------------------------------------- game speed (single player; the runtime scales timeGetTime)
-let speed = 100, lastSpeed = 100, netLocked = false;
+// ---------------------------------------------------------------- game speed
+// For the known game versions qol.c sets the speed with the game's own speed command (what its p and
+// l keys send: 12 = normal; multiplayer games stay in step) and reports the current one, so the
+// selector follows those keys too. Otherwise the runtime scales the game's clock, in single player only.
+const NATIVE_SPEEDS = [[0, 'Paused'], [6, '½×'], [12, '1×'], [24, '2×'], [36, '3×'], [60, '5×'], [120, '10×']];
+const CLOCK_SPEEDS = [[0, 'Paused'], [50, '½×'], [100, '1×'], [200, '2×'], [300, '3×'], [400, '4×']];
+let native = false, speed = 100, lastSpeed = 100, netLocked = false;
+const qolGet = slot => Atomics.load(ctl, C.QOL + slot), qolSet = (slot, v) => Atomics.store(ctl, C.QOL + slot, v);
+function fillSpeeds() {
+  // in multiplayer, only the speeds the game's own l key offers
+  const list = native ? NATIVE_SPEEDS.filter(([v]) => !netLocked || v === 0 || v >= 12 && v <= 36) : CLOCK_SPEEDS;
+  $('speed').textContent = '';
+  for (const [v, label] of list) $('speed').add(new Option(label, v));
+  $('speed').value = speed;
+}
 function setSpeed(v) {
+  if (native) { if (ctl) qolSet(Q.SPEED_REQ, v); return; }   // pollSpeed() shows the result
   if (netLocked) v = 100;
   speed = v;
   if (v) lastSpeed = v;
@@ -397,14 +488,33 @@ function setSpeed(v) {
   $('speed').value = v;
   $('paused').hidden = v !== 0;
 }
+function pollSpeed() {
+  const now = qolGet(Q.SPEED_NOW);
+  if (now < 0) return;
+  if (!native) {   // the game's speed command was found: use it instead of the clock
+    native = true; speed = 12; lastSpeed = 12;
+    Atomics.store(ctl, C.SPEED, 100);
+    $('paused').hidden = true;   // the game shows its own "paused"
+    $('speed').disabled = false;
+    fillSpeeds();
+  }
+  if (now !== speed) { speed = now; if (now) lastSpeed = now; $('speed').value = now; }
+}
 function togglePause() { setSpeed(speed ? 0 : lastSpeed); }
 function lockSpeed(locked) {
   netLocked = locked;
+  if (native) { if (locked && speed > 36) setSpeed(36); fillSpeeds(); return; }
   $('speed').disabled = locked;
   $('speed').title = locked ? 'Multiplayer runs at normal speed' : 'Game speed (the Pause key pauses and resumes)';
   if (locked) { lastSpeed = 100; setSpeed(100); }
 }
 $('speed').addEventListener('change', () => { setSpeed(+$('speed').value); canvas.focus(); });
+function quickload() {
+  if (!ctl || netLocked) return;
+  qolSet(Q.QUICKLOAD, 1);
+  status('Loading the quicksave…');
+  setTimeout(() => status('Running'), 2000);
+}
 
 // ---------------------------------------------------------------- screenshots (the canvas holds the frame at game resolution)
 function screenshot() {
@@ -482,6 +592,7 @@ function draw() {
       if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; canvas.style.aspectRatio = w + ' / ' + h; }
       display(w, h, ctl[C.FFMT]);
     }
+    pollSpeed();
   }
   requestAnimationFrame(draw);
 }
@@ -554,6 +665,8 @@ async function start() {
   ctl = new Int32Array(shared, 0, 2048);
   frame = new Uint8Array(shared, FRAME_OFF, FRAME_MAX);
   netRing = new Uint8Array(shared, NET_OFF, NET_SIZE);
+  for (const [slot, v] of [[Q.AUTOSAVE, settings.autosave * 60], [Q.SPEED_REQ, -1], [Q.QUICKLOAD, 0], [Q.SPEED_NOW, -1]]) qolSet(slot, v);
+  fillSpeeds();
   setSpeed(100);
   $('speed').hidden = $('btn-shot').hidden = false;
 

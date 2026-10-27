@@ -43,8 +43,9 @@ game:
 - **Display:** smooth or sharp-pixel scaling; **Skip intro video** goes straight to the menu (the
   menu's Introsequenz still plays it); **Edge scrolling** keeps the map scrolling when the cursor leaves
   the game past an edge.
-- **Saves:** export this version's saves and settings as a zip, or import such a zip (before
-  starting the game).
+- **Saves:** an autosave interval for every game (the game's own autosave, Options → Speichern,
+  is off each time it starts); export this version's saves and settings as a zip, or import such a
+  zip (before starting the game).
 - **Sound:** master volume, and an option to mute while the tab is in the background.
 - **Multiplayer server.**
 
@@ -53,8 +54,12 @@ Everything else, such as scrolling, music and detail level, is in the game's own
 
 ### While playing
 
-- **Game speed:** the selector in the header runs single-player games at ½× to 4×, and the
-  **Pause** key pauses and resumes. Multiplayer always runs at 1×.
+- **Game speed:** the selector in the header sets ½× to 10×, and the **Pause** key pauses and
+  resumes. It uses the game's own speed command (the one behind its `p` and `l` keys), so it also
+  follows those keys, and in multiplayer every player's game changes with it (there, up to 3×). For
+  an unknown game executable it scales the game's clock instead, in single player only.
+- **Quickload:** **Shift F9** loads the quicksave that **F9** (or Ctrl S) saves.
+- **Keys:** the header button lists the game's keyboard shortcuts.
 - **Screenshot:** the header button or **Print Screen** saves a PNG at the game's resolution.
 
 ### Multiplayer
@@ -286,7 +291,8 @@ The native build never writes to the game directory: saves and settings go to
 | `runtime/video.c` | The DirectShow multimedia-stream objects the game plays its MPEG-1 videos with, decoded by pl_mpeg |
 | `runtime/dplay.c` | DirectPlay 8 (peer sessions) over the relay, plus the game's two network threads run as cooperative tasks |
 | `relay.py` | WebSocket relay that multiplayer uses (`serve.py` serves it at `/net`) |
-| `runtime/platform_sdl.c` | Native layer, with debug hooks `HEADLESS`, `CTL_FILE`, `AUDIO_DUMP`, `TRACE_CALLS`, `DUMP_FRAMES`; `NET_URL` sets the relay (default `ws://127.0.0.1:8000/net`) |
+| `runtime/qol.c` | Autosave default, game speed and quickload through the game's own routines, found by their code in each version |
+| `runtime/platform_sdl.c` | Native layer, with debug hooks `HEADLESS`, `CTL_FILE` (also `qol <slot> <value>`), `AUDIO_DUMP`, `TRACE_CALLS`, `DUMP_FRAMES`; `NET_URL` sets the relay (default `ws://127.0.0.1:8000/net`); `SPEED` (clock percent), `SKIP_INTRO`, `AUTOSAVE` (seconds) |
 
 The browser layer works like this:
 

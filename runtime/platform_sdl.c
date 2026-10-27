@@ -30,6 +30,13 @@ void plat_init(void) {
 }
 uint32_t plat_ticks_ms(void) { return SDL_GetTicks(); }
 int plat_game_speed(void) { return getenv("SPEED") ? atoi(getenv("SPEED")) : 100; }
+/* AUTOSAVE=seconds sets the default autosave interval; the other slots are only kept */
+static int qol_slots[QOL_N] = {0, -1, 0, -1};
+int plat_qol_get(int slot) {
+    if (slot == QOL_AUTOSAVE && getenv("AUTOSAVE")) return atoi(getenv("AUTOSAVE"));
+    return slot >= 0 && slot < QOL_N ? qol_slots[slot] : 0;
+}
+void plat_qol_set(int slot, int v) { if (slot >= 0 && slot < QOL_N) qol_slots[slot] = v; }
 uint64_t plat_ticks_us(void) { return SDL_GetPerformanceCounter() * 1000000ull / SDL_GetPerformanceFrequency(); }
 void plat_sleep(uint32_t ms) { SDL_Delay(ms); }
 void plat_log(const char *s) { fputs(s, stderr); }
@@ -178,6 +185,8 @@ static int ctl_poll(plat_event *ev) {
     } else if (sscanf(line, "shot %479s", str) == 1) {
         if (last_frame) save_ppm(str, last_frame, last_w, last_h);
         else snprintf(shot_path, sizeof shot_path, "%s", str);
+    } else if (sscanf(line, "qol %d %d", &x, &y) == 2) {   /* set a qol.c slot, as the page does */
+        plat_qol_set(x, y);
     } else if (strncmp(line, "quit", 4) == 0) {
         q(EV_QUIT, 0, 0, 0, 0);
     }
